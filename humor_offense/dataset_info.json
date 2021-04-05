@@ -1,0 +1,60 @@
+{
+  "builder_name": null,
+  "citation": "",
+  "config_name": null,
+  "dataset_size": null,
+  "description": "",
+  "download_checksums": null,
+  "download_size": null,
+  "features": {
+    "humor_controversy": {
+      "_type": "ClassLabel",
+      "id": null,
+      "names": [
+        "na",
+        "not_controversial",
+        "controversial"
+      ],
+      "names_file": null,
+      "num_classes": 3
+    },
+    "humor_rating": {
+      "_type": "Value",
+      "dtype": "float64",
+      "id": null
+    },
+    "idx": {
+      "_type": "Value",
+      "dtype": "int64",
+      "id": null
+    },
+    "label": {
+      "_type": "ClassLabel",
+      "id": null,
+      "names": [
+        "not_humorous",
+        "humorous"
+      ],
+      "names_file": null,
+      "num_classes": 2
+    },
+    "offense_rating": {
+      "_type": "Value",
+      "dtype": "float64",
+      "id": null
+    },
+    "sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "post_processed": null,
+  "post_processing_size": null,
+  "size_in_bytes": null,
+  "splits": null,
+  "supervised_keys": null,
+  "version": null
+}

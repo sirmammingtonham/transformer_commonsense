@@ -1,0 +1,59 @@
+{
+  "builder_name": null,
+  "citation": "",
+  "config_name": null,
+  "dataset_size": null,
+  "description": "",
+  "download_checksums": null,
+  "download_size": null,
+  "features": {
+    "edit": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "grades": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "id": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "label": {
+      "_type": "Value",
+      "dtype": "float64",
+      "id": null
+    },
+    "matrix": {
+      "_type": "Sequence",
+      "feature": {
+        "_type": "Sequence",
+        "feature": {
+          "_type": "Value",
+          "dtype": "int64",
+          "id": null
+        },
+        "id": null,
+        "length": -1
+      },
+      "id": null,
+      "length": -1
+    },
+    "original": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "post_processed": null,
+  "post_processing_size": null,
+  "size_in_bytes": null,
+  "splits": null,
+  "supervised_keys": null,
+  "version": null
+}

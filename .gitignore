@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# stufff
+.vscode/
+*.zip
+cache-*.arrow
+**/*_run/
