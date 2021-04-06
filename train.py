@@ -46,6 +46,8 @@ from transformers.utils import check_min_version
 
 from src.model import BertSimForSequenceClassification
 
+import phonetics
+import Levenshtein
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.5.0.dev0")
@@ -334,6 +336,28 @@ def main():
 		)
 	max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 	sim_pad_length = max_seq_length*config.num_attention_heads
+
+	def create_similarity_matrix(words):
+		maximum = 0
+		matrix = []
+		for word in words:
+			row = []
+			for other in words:
+				# pylint: disable=maybe-no-member
+				dist = Levenshtein.distance(word, other)
+				row.append(dist)
+				if dist > maximum:
+					maximum = dist
+			matrix.append(row)
+		
+		nmatrix = []
+		for row in matrix:
+			nr = []
+			for score in row:
+				nr.append(maximum - score)
+			nmatrix.append(nr)
+		
+		return nmatrix
 
 	def preprocess_function(examples):
 		# Tokenize the texts
