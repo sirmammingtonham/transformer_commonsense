@@ -155,6 +155,11 @@ class ModelArguments:
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
+    use_similarity: bool = field(
+        default=True,
+        metadata={
+            "help": "Use similarity or not"}
+    )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
@@ -287,21 +292,20 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    # model = AutoModelForSequenceClassification.from_pretrained( #AutoModelForSequenceClassification
-    # 	model_args.model_name_or_path,
-    # 	from_tf=bool(".ckpt" in model_args.model_name_or_path),
-    # 	config=config,
-    # 	cache_dir=model_args.cache_dir,
-    # 	revision=model_args.model_revision,
-    # 	use_auth_token=True if model_args.use_auth_token else None,
-    # )
-    model = BertSimForSequenceClassification.from_pretrained(  # AutoModelForSequenceClassification
+    model = BertSimForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
+    ) if model_args.use_similarity else AutoModelForSequenceClassification.from_pretrained(
+    	model_args.model_name_or_path,
+    	from_tf=bool(".ckpt" in model_args.model_name_or_path),
+    	config=config,
+    	cache_dir=model_args.cache_dir,
+    	revision=model_args.model_revision,
+    	use_auth_token=True if model_args.use_auth_token else None,
     )
 
     # Preprocessing the datasets
@@ -340,18 +344,12 @@ def main():
             (examples[sentence1_key],) if sentence2_key is None else (
                 examples[sentence1_key], examples[sentence2_key])
         )
+
         result = tokenizer(*args, padding=padding,
                            max_length=max_seq_length, truncation=True)
 
-        # def pad(x):
-        #     target = torch.ones(sim_pad_length, sim_pad_length)
-        #     dim = len(x)
-        #     target[:dim, :dim] = torch.tensor(x)
-        #     print(target.size())
-        #     return target
-
-        result['similarity'] = create_similarity_matrix(tokenizer, *args)
-
+        if model_args.use_similarity:
+            result['similarity'] = create_similarity_matrix(tokenizer, *args, pad_length=max_seq_length)
         return result
 
     datasets = datasets.map(preprocess_function, batched=True,

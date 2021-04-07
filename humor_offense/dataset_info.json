@@ -23,9 +23,9 @@
       "dtype": "float64",
       "id": null
     },
-    "idx": {
+    "hypothesis": {
       "_type": "Value",
-      "dtype": "int64",
+      "dtype": "string",
       "id": null
     },
     "label": {
@@ -43,7 +43,7 @@
       "dtype": "float64",
       "id": null
     },
-    "sentence": {
+    "premise": {
       "_type": "Value",
       "dtype": "string",
       "id": null

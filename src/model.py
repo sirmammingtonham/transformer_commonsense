@@ -22,10 +22,7 @@ class BertSimSelfAttention(BertSelfAttention):
         similarity=None,
     ):
         mixed_query_layer = self.query(hidden_states)
-        # print(self.num_attention_heads)
-        # print(self.attention_head_size)
-        # print(self.all_head_size)
-
+        
         # If this is instantiated as a cross-attention module, the keys
         # and values come from an encoder; the attention mask needs to be
         # such that the encoder's padding tokens are not attended to.
@@ -63,7 +60,6 @@ class BertSimSelfAttention(BertSelfAttention):
             past_key_value = (key_layer, value_layer)
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        print(query_layer.size(), key_layer.transpose(-1, -2).size())
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
         if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
@@ -93,8 +89,8 @@ class BertSimSelfAttention(BertSelfAttention):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         if similarity is not None:
-            print(self.attention_head_size)
-            print(attention_scores.size(), similarity.size())
+            # reshape (repeat similarity tensor for each attention head)
+            similarity = similarity.unsqueeze(1).repeat(1, self.num_attention_heads, 1, 1)
             attention_scores = torch.mul(attention_scores, similarity)
 
         if attention_mask is not None:

@@ -27,21 +27,6 @@
       "dtype": "float64",
       "id": null
     },
-    "matrix": {
-      "_type": "Sequence",
-      "feature": {
-        "_type": "Sequence",
-        "feature": {
-          "_type": "Value",
-          "dtype": "int64",
-          "id": null
-        },
-        "id": null,
-        "length": -1
-      },
-      "id": null,
-      "length": -1
-    },
     "original": {
       "_type": "Value",
       "dtype": "string",
