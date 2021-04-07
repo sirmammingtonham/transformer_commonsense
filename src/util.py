@@ -37,9 +37,9 @@ def create_similarity_matrix(tokenizer, *args):
                 maximum = dist
         matrix.append(row)
 
-    matrix - maximum + 1
-
-    return stable_softmax(np.array(matrix))
+    npm = np.array(matrix)
+    nmatrix = maximum - npm + 1
+    return stable_softmax(nmatrix)
 
 if __name__ == '__main__':
 	tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
