@@ -1,7 +1,6 @@
 
 import numpy as np
-import phonetics
-import Levenshtein
+from pyphonetics import RefinedSoundex
 
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 
@@ -15,6 +14,7 @@ def stable_softmax(x):
 
 
 def create_similarity_matrix(tokenizer, *args):
+    rs = RefinedSoundex()
     tokens = [tokenizer.cls_token]
     for words in args:
         tokens.extend(tokenizer.tokenize(words))
@@ -31,20 +31,15 @@ def create_similarity_matrix(tokenizer, *args):
                 ):
                 row.append(0)
                 continue
-            dist = Levenshtein.distance(word, comparison)
+            dist = rs.distance(word, comparison)
             row.append(dist)
             if dist > maximum:
                 maximum = dist
         matrix.append(row)
 
-    nmatrix = []
-    for row in matrix:
-        nr = []
-        for score in row:
-            nr.append(maximum - score + 1)
-        nmatrix.append(nr)
+    matrix - maximum + 1
 
-    return stable_softmax(np.array(nmatrix))
+    return stable_softmax(np.array(matrix))
 
 if __name__ == '__main__':
 	tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
