@@ -23,12 +23,12 @@ def create_similarity_matrix(tokenizer, *args, pad_length=128, algorithm='META',
     ALG = phonetic_algs[algorithm]
 
     # concatenate sequences if we're doing batches
-    sequences = [' '.join(x) for x in zip(*args)] if len(args) > 1 else args
+    sequences = [' '.join(x) for x in zip(*args)] if len(args) > 1 else [x for x in args[0]]
     
     # break sequences into word piece tokens
     batch = [[tokenizer.cls_token] + [x.strip('##') for x in tokenizer.tokenize(
         sequence)] + [tokenizer.sep_token] for sequence in sequences]
-    batch = [x + ['']*(pad_length-len(x)) for x in batch] # pad to max length
+    batch = [x[:pad_length] + ['']*(pad_length-len(x)) for x in batch] # pad to max length
 
     # calculate similarity matrix (i love list comprehension)
     # ignores special tokens
@@ -51,7 +51,7 @@ def create_similarity_matrix(tokenizer, *args, pad_length=128, algorithm='META',
     similarities = [maxes[i] - similarities[i] + 1 for i in range(len(similarities))] #np.max(similarities) - similarities + 1
 
     # return softmax of matrix
-    return [stable_softmax(x) for x in similarities]
+    return [stable_softmax(x).astype(float) for x in similarities]
 
 
 if __name__ == '__main__':

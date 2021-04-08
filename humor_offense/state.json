@@ -5,10 +5,10 @@
       "filename": "dataset.arrow"
     }
   ],
-  "_fingerprint": "e870088145e86e46",
+  "_fingerprint": "f2a671291e331f17",
   "_format_columns": null,
   "_format_kwargs": {},
-  "_format_type": "numpy",
+  "_format_type": null,
   "_indexes": {},
   "_indices": null,
   "_indices_data_files": [],

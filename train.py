@@ -52,8 +52,8 @@ check_min_version("4.5.0.dev0")
 
 task_to_keys = {
     "semeval_regression": ("original", "edit"),
-    "humor_regression": ("sentence", None),
-    "humor_classification": ("sentence", None)
+    "humor_regression": ("text", None),
+    "humor_classification": ("text", None)
 }
 
 logger = logging.getLogger(__name__)
@@ -257,8 +257,13 @@ def main():
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
     loaded_data = load_from_disk(data_args.dataset_path)
+    # loaded_data = loaded_data.train_test_split(test_size=0.01)['test']
+    if data_args.task_name == 'humor_regression':
+        loaded_data = loaded_data.rename_column('humor_rating', 'label')
+
     train_testvalid = loaded_data.train_test_split(test_size=0.2)
     test_valid = train_testvalid['test'].train_test_split(test_size=0.5)
+
     datasets = DatasetDict({
         'train': train_testvalid['train'],
         'test': test_valid['test'],

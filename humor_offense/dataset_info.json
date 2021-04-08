@@ -8,42 +8,31 @@
   "download_size": null,
   "features": {
     "humor_controversy": {
-      "_type": "ClassLabel",
-      "id": null,
-      "names": [
-        "na",
-        "not_controversial",
-        "controversial"
-      ],
-      "names_file": null,
-      "num_classes": 3
+      "_type": "Value",
+      "dtype": "float64",
+      "id": null
     },
     "humor_rating": {
       "_type": "Value",
       "dtype": "float64",
       "id": null
     },
-    "hypothesis": {
+    "id": {
       "_type": "Value",
-      "dtype": "string",
+      "dtype": "int64",
       "id": null
     },
-    "label": {
-      "_type": "ClassLabel",
-      "id": null,
-      "names": [
-        "not_humorous",
-        "humorous"
-      ],
-      "names_file": null,
-      "num_classes": 2
+    "is_humor": {
+      "_type": "Value",
+      "dtype": "int64",
+      "id": null
     },
     "offense_rating": {
       "_type": "Value",
       "dtype": "float64",
       "id": null
     },
-    "premise": {
+    "text": {
       "_type": "Value",
       "dtype": "string",
       "id": null
