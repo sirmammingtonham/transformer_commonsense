@@ -58,6 +58,7 @@ task_to_keys = {
 
 logger = logging.getLogger(__name__)
 
+SEED = 69
 
 @dataclass
 class DataTrainingArguments:
@@ -191,6 +192,11 @@ class ModelArguments:
 
 
 def main():
+    # set seed for repro
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    random.seed(SEED)
+
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
@@ -261,8 +267,8 @@ def main():
     if data_args.task_name == 'humor_regression':
         loaded_data = loaded_data.rename_column('humor_rating', 'label')
 
-    train_testvalid = loaded_data.train_test_split(test_size=0.2)
-    test_valid = train_testvalid['test'].train_test_split(test_size=0.5)
+    train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+    test_valid = train_testvalid['test'].train_test_split(test_size=0.5, seed=SEED)
 
     datasets = DatasetDict({
         'train': train_testvalid['train'],
