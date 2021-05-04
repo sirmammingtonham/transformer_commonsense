@@ -1,0 +1,54 @@
+{
+  "builder_name": null,
+  "citation": "",
+  "config_name": null,
+  "dataset_size": null,
+  "description": "",
+  "download_checksums": null,
+  "download_size": null,
+  "features": {
+    "cat_index": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "fifth_sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "first_sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "fourth_sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "second_sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "story_id": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "third_sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "post_processed": null,
+  "post_processing_size": null,
+  "size_in_bytes": null,
+  "splits": null,
+  "supervised_keys": null,
+  "version": null
+}
