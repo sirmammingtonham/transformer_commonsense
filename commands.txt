@@ -1,5 +1,9 @@
-python train.py --model_name_or_path bert-base-cased  --task_name semeval_regression --dataset_path ../semeval/ --do_train --do_eval --per_device_train_batch_size 32 --learning_rate 5e-5 --num_train_epochs 2.0 --max_seq_length 128 --output_dir ../test_run/ --save_steps -1
+---- similarity train commands ----
+python train_sim.py --model_name_or_path bert-base-cased  --task_name semeval_regression --dataset_path ../semeval/ --do_train --do_eval --per_device_train_batch_size 32 --learning_rate 5e-5 --num_train_epochs 2.0 --max_seq_length 128 --output_dir ../test_run/ --save_steps -1
 
-python train.py --model_name_or_path bert-base-cased  --task_name semeval_regression --dataset_path ./semeval/ --do_train --do_eval --per_device_train_batch_size 32 --learning_rate 5e-5 --num_train_epochs 2.0 --max_seq_length 128 --output_dir ./test_run/ --save_steps -1 --overwrite_output_dir
+python train_sim.py --model_name_or_path bert-base-cased  --task_name semeval_regression --dataset_path ./semeval/ --do_train --do_eval --per_device_train_batch_size 32 --learning_rate 5e-5 --num_train_epochs 2.0 --max_seq_length 128 --output_dir ./test_run/ --save_steps -1 --overwrite_output_dir
 
-python train.py --model_name_or_path bert-base-cased  --task_name semeval_regression --dataset_path ./semeval/ --do_train --do_eval --per_device_train_batch_size 32 --learning_rate 5e-5 --num_train_epochs 2.0 --max_seq_length 128 --output_dir ./test_run/ --save_steps -1 --overwrite_output_dir --use_similarity True
+python train_sim.py --model_name_or_path bert-base-cased  --task_name semeval_regression --dataset_path ./semeval/ --do_train --do_eval --per_device_train_batch_size 32 --learning_rate 5e-5 --num_train_epochs 2.0 --max_seq_length 128 --output_dir ./test_run/ --save_steps -1 --overwrite_output_dir --use_similarity True
+
+---- common sense baseline train commands ----
+python train_cs_baseline.py --model_name_or_path microsoft/deberta-base  --task_name category_prediction --do_train --do_eval --do_predict --per_device_train_batch_size 16 --learning_rate 3e-5 --num_train_epochs 3.0 --max_seq_length 128 --output_dir ./cs_category_run_1/ --save_steps 1000 --overwrite_output_dir

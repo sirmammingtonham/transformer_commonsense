@@ -132,4 +132,4 @@ dmypy.json
 .vscode/
 *.zip
 cache-*.arrow
-**/*_run/
+*_run*/

@@ -7,18 +7,6 @@
   "download_checksums": null,
   "download_size": null,
   "features": {
-    "category": {
-      "_type": "ClassLabel",
-      "id": null,
-      "names": [
-        "behavior_based",
-        "objective_based",
-        "emotional_based",
-        "goal_driven"
-      ],
-      "names_file": null,
-      "num_classes": 4
-    },
     "fifth_sentence": {
       "_type": "Value",
       "dtype": "string",
@@ -33,6 +21,18 @@
       "_type": "Value",
       "dtype": "string",
       "id": null
+    },
+    "label": {
+      "_type": "ClassLabel",
+      "id": null,
+      "names": [
+        "behavior_based",
+        "objective_based",
+        "emotional_based",
+        "goal_driven"
+      ],
+      "names_file": null,
+      "num_classes": 4
     },
     "second_sentence": {
       "_type": "Value",

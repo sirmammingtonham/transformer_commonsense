@@ -14,7 +14,7 @@ def dict_up(features):
         features[6]: indicies
     }        
 
-CAT_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'category']
+CAT_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'label']
 
 PRI_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'primary']
 
@@ -58,14 +58,14 @@ with open(FILE_PATH, 'r') as f:
             'third_sentence': datasets.Value('string'),
             'fourth_sentence': datasets.Value('string'),
             'fifth_sentence': datasets.Value('string'),
-            'category': datasets.ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
+            'label': datasets.ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
         })
         dataset = dataset.cast(feats)
         print(dataset.features)
         dataset.set_format('numpy')
         dataset.save_to_disk('../baseline_data/category')
 
-    elif sys.argv[1] == 'pri':
+    elif sys.argv[1] == 'imp':
         dataset = Dataset.from_dict(dict_up(PRI_FEATURES))
         feats = datasets.Features({
             'story_id': datasets.Value('string'), 
@@ -74,8 +74,8 @@ with open(FILE_PATH, 'r') as f:
             'third_sentence': datasets.Value('string'),
             'fourth_sentence': datasets.Value('string'),
             'fifth_sentence': datasets.Value('string'),
-            'primary': datasets.features.Sequence(datasets.Value('string'))
+            'importance': datasets.features.Sequence(datasets.Value('string'))
         })
         dataset = dataset.cast(feats)
         dataset.set_format('numpy')
-        dataset.save_to_disk('../baseline_data/primary_sentence')
+        dataset.save_to_disk('../baseline_data/importance')

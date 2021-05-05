@@ -44,7 +44,7 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 from transformers.utils import check_min_version
 
-from src.model import BertSimForSequenceClassification
+from src.bert_sim import BertSimForSequenceClassification
 from src.util import create_similarity_matrix
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -355,6 +355,8 @@ def main():
             (examples[sentence1_key],) if sentence2_key is None else (
                 examples[sentence1_key], examples[sentence2_key])
         )
+
+        print(*args)
 
         result = tokenizer(*args, padding=padding,
                            max_length=max_seq_length, truncation=True)
