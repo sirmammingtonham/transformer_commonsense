@@ -8,9 +8,16 @@
   "download_size": null,
   "features": {
     "category": {
-      "_type": "Value",
-      "dtype": "int64",
-      "id": null
+      "_type": "ClassLabel",
+      "id": null,
+      "names": [
+        "behavior_based",
+        "objective_based",
+        "emotional_based",
+        "goal_driven"
+      ],
+      "names_file": null,
+      "num_classes": 4
     },
     "fifth_sentence": {
       "_type": "Value",

@@ -33,7 +33,6 @@ if sys.argv[1] == 'cat':
 elif sys.argv[1] == 'pri':
     FILE_PATH = '../baseline_texts/Full_labeled_primary_sentence_consensus_dataset_for_baseline.txt'
 
-
 with open(FILE_PATH, 'r') as f:
     for row in f:
         elements = row.split(' | ')
@@ -52,7 +51,6 @@ with open(FILE_PATH, 'r') as f:
 
     if sys.argv[1] == 'cat':
         dataset = Dataset.from_dict(dict_up(CAT_FEATURES))
-        dataset.set_format('numpy')
         feats = datasets.Features({
             'story_id': datasets.Value('string'), 
         	'first_sentence': datasets.Value('string'), 
@@ -60,14 +58,15 @@ with open(FILE_PATH, 'r') as f:
             'third_sentence': datasets.Value('string'),
             'fourth_sentence': datasets.Value('string'),
             'fifth_sentence': datasets.Value('string'),
-            'category': datasets.ClassLabel(4, CATEGORIES)
+            'category': datasets.ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
         })
-        dataset.cast(feats)
+        dataset = dataset.cast(feats)
+        print(dataset.features)
+        dataset.set_format('numpy')
         dataset.save_to_disk('../baseline_data/category')
 
     elif sys.argv[1] == 'pri':
         dataset = Dataset.from_dict(dict_up(PRI_FEATURES))
-        dataset.set_format('numpy')
         feats = datasets.Features({
             'story_id': datasets.Value('string'), 
             'first_sentence': datasets.Value('string'), 
@@ -77,5 +76,6 @@ with open(FILE_PATH, 'r') as f:
             'fifth_sentence': datasets.Value('string'),
             'primary': datasets.features.Sequence(datasets.Value('string'))
         })
-        dataset.cast(feats)
+        dataset = dataset.cast(feats)
+        dataset.set_format('numpy')
         dataset.save_to_disk('../baseline_data/primary_sentence')
