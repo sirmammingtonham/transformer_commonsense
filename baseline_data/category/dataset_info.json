@@ -7,9 +7,9 @@
   "download_checksums": null,
   "download_size": null,
   "features": {
-    "cat_index": {
+    "category": {
       "_type": "Value",
-      "dtype": "string",
+      "dtype": "int64",
       "id": null
     },
     "fifth_sentence": {

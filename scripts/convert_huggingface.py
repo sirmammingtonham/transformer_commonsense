@@ -1,4 +1,5 @@
 import sys
+import datasets
 from datasets import Dataset
 
 def dict_up(features):
@@ -13,9 +14,11 @@ def dict_up(features):
         features[6]: indicies
     }        
 
-CAT_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'cat_index']
+CAT_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'category']
 
-PRI_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'sen_index']
+PRI_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'primary']
+
+CATEGORIES = ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven']
 
 ids = []
 firsts = []
@@ -43,21 +46,36 @@ with open(FILE_PATH, 'r') as f:
         fourths.append(elements[4])
         fifths.append(elements[5])
         if sys.argv[1] == 'cat':
-            indicies.append(elements[6].replace('\n',''))
+            indicies.append(int(elements[6].replace('\n','')))
         elif sys.argv[1] == 'pri':
-            indicies.append(elements[6].replace('\n','').split(','))
+            indicies.append([elements[int(i) + 1] for i in elements[6].replace('\n','').split(',')])
 
     if sys.argv[1] == 'cat':
         dataset = Dataset.from_dict(dict_up(CAT_FEATURES))
         dataset.set_format('numpy')
+        feats = datasets.Features({
+            'story_id': datasets.Value('string'), 
+        	'first_sentence': datasets.Value('string'), 
+            'second_sentence': datasets.Value('string'),
+            'third_sentence': datasets.Value('string'),
+            'fourth_sentence': datasets.Value('string'),
+            'fifth_sentence': datasets.Value('string'),
+            'category': datasets.ClassLabel(4, CATEGORIES)
+        })
+        dataset.cast(feats)
         dataset.save_to_disk('../baseline_data/category')
 
     elif sys.argv[1] == 'pri':
         dataset = Dataset.from_dict(dict_up(PRI_FEATURES))
         dataset.set_format('numpy')
+        feats = datasets.Features({
+            'story_id': datasets.Value('string'), 
+            'first_sentence': datasets.Value('string'), 
+            'second_sentence': datasets.Value('string'),
+            'third_sentence': datasets.Value('string'),
+            'fourth_sentence': datasets.Value('string'),
+            'fifth_sentence': datasets.Value('string'),
+            'primary': datasets.features.Sequence(datasets.Value('string'))
+        })
+        dataset.cast(feats)
         dataset.save_to_disk('../baseline_data/primary_sentence')
-    
-print(dataset)
-import random
-
-print(random.choices(dataset['sen_index'], k=10))

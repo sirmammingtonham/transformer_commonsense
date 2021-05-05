@@ -22,12 +22,7 @@
       "dtype": "string",
       "id": null
     },
-    "second_sentence": {
-      "_type": "Value",
-      "dtype": "string",
-      "id": null
-    },
-    "sen_index": {
+    "primary": {
       "_type": "Sequence",
       "feature": {
         "_type": "Value",
@@ -36,6 +31,11 @@
       },
       "id": null,
       "length": -1
+    },
+    "second_sentence": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
     },
     "story_id": {
       "_type": "Value",
