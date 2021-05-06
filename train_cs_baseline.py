@@ -25,7 +25,7 @@ from typing import Optional
 
 import numpy as np
 import torch
-from datasets import load_from_disk, DatasetDict
+from datasets import load_from_disk, DatasetDict, Dataset, Features, ClassLabel, Value
 
 import transformers
 from transformers import (
@@ -72,6 +72,18 @@ class DataTrainingArguments:
         metadata={
             "help": "The name of the task to train on: (category_prediction or importance_prediction)"},
     )
+    # balance_dataset: bool = field(
+    #     default=False,
+    #     metadata={
+    #         "help": "Whether to sample dataset to remove class imbalance "
+    #     },
+    # ),
+    # one_hot_encode: bool = field(
+    #     default=False,
+    #     metadata={
+    #         "help": "Whether to sample dataset to remove class imbalance "
+    #     },
+    # )
     max_seq_length: int = field(
         default=128,
         metadata={
@@ -129,7 +141,6 @@ class DataTrainingArguments:
             raise Exception(
                 'need --task_name (either category_prediction or importance_prediction)')
 
-
 @dataclass
 class ModelArguments:
     """
@@ -169,6 +180,8 @@ class ModelArguments:
         },
     )
 
+balance_dataset = False
+one_hot_encode = False
 
 def main():
     # set seed for repro
@@ -245,8 +258,24 @@ def main():
         loaded_data = load_from_disk('./baseline_data/category')
     elif data_args.task_name == 'importance_prediction':
         loaded_data = load_from_disk('./baseline_data/importance')
+    if balance_dataset:
+        df = loaded_data.to_pandas()
+        g = df.groupby('label')
+        df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
+        loaded_data = Dataset.from_pandas(df.reset_index(drop=True))
+        feats = Features({
+            'story_id': Value('string'),
+            'first_sentence': Value('string'),
+            'second_sentence': Value('string'),
+            'third_sentence': Value('string'),
+            'fourth_sentence': Value('string'),
+            'fifth_sentence': Value('string'),
+            'label': ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
+        })
+        loaded_data = loaded_data.cast(feats)
 
     train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+
     test_valid = train_testvalid['test'].train_test_split(
         test_size=0.5, seed=SEED)
 
@@ -307,27 +336,36 @@ def main():
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
     sep_token = tokenizer.special_tokens_map['sep_token']
+
     def preprocess_function(examples):
         # Tokenize the texts
         args = [sep_token.join((examples['first_sentence'][i], examples['second_sentence'][i],
-                                         examples['third_sentence'][i], examples['fourth_sentence'][i],
-                                         examples['fifth_sentence'][i]))
+                                examples['third_sentence'][i], examples['fourth_sentence'][i],
+                                examples['fifth_sentence'][i]))
                 for i in range(len(examples['first_sentence']))
                 ]
 
         result = tokenizer(args, padding=padding,
                            max_length=max_seq_length, truncation=True)
 
+        if one_hot_encode and num_labels > 1:
+            result['label'] = [np.array([int(i == label) for i in range(
+                num_labels)]) for label in examples['label']]  # one hot encode labels
+
         return result
 
+    if training_args.do_train:
+        labels = datasets['train']['label']
     datasets = datasets.map(preprocess_function, batched=True,
                             load_from_cache_file=not data_args.overwrite_cache)
+
     class_weights = None
     if training_args.do_train:
         if "train" not in datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = datasets["train"]
-        class_weights = compute_class_weight('balanced', classes=np.unique(train_dataset['label']), y=train_dataset['label'])
+        class_weights = compute_class_weight(
+            'balanced', classes=np.unique(labels), y=labels)
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(
                 range(data_args.max_train_samples))
@@ -355,11 +393,6 @@ def main():
             logger.info(
                 f"Sample {index} of the training set: {train_dataset[index]}.")
 
-    # Get the metric function
-
-    # accuracy = load_metric("accuracy")
-    # f1 = load_metric("f1")
-
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
@@ -368,7 +401,7 @@ def main():
         preds = np.squeeze(
             preds) if is_regression else np.argmax(preds, axis=1)
         if not is_regression:
-            labels = p.label_ids
+            labels = np.argmax(p.label_ids, axis=1) if one_hot_encode else p.label_ids
             precision, recall, f1, _ = precision_recall_fscore_support(
                 labels, preds, average="macro")
             acc = accuracy_score(labels, preds)

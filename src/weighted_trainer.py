@@ -6,10 +6,12 @@ from transformers import Trainer
 class WeightedTrainer(Trainer):
     def __init__(self, class_weights=None, **kwargs):
         super().__init__(**kwargs)
-        assert(len(class_weights) == kwargs['model'].num_labels)
-        self.class_weights = torch.as_tensor(
-            class_weights).float().to(self.args.device)
-        print(self.class_weights)
+        
+        if class_weights is not None:
+            assert(len(class_weights) == kwargs['model'].num_labels)
+            self.class_weights = torch.as_tensor(
+                class_weights).float().to(self.args.device)
+            print(self.class_weights)
 
     def compute_loss(self, model, inputs, return_outputs=False):
         if "labels" in inputs:
