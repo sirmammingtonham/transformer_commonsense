@@ -1,0 +1,22 @@
+{
+  "_data": null,
+  "_data_files": [
+    {
+      "filename": "dataset.arrow"
+    }
+  ],
+  "_fingerprint": "a7e5c90de990ed3a",
+  "_format_columns": null,
+  "_format_kwargs": {},
+  "_format_type": "numpy",
+  "_indexes": {},
+  "_indices": null,
+  "_indices_data_files": [],
+  "_inplace_history": [
+    {
+      "transforms": []
+    }
+  ],
+  "_output_all_columns": false,
+  "_split": "train"
+}

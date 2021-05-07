@@ -1,0 +1,82 @@
+{
+  "builder_name": "csv",
+  "citation": "",
+  "config_name": "default",
+  "dataset_size": 620668,
+  "description": "",
+  "download_checksums": {
+    "storycloze\\cloze_test_test__spring2016 - cloze_test_ALL_test - cloze_test_test__spring2016 - cloze_test_ALL_test.csv": {
+      "checksum": "27eb558d129b922ddb7d5427ee140a21d9d636fbd46c90343fd800ab533f9cb6",
+      "num_bytes": 574480
+    }
+  },
+  "download_size": 574480,
+  "features": {
+    "AnswerRightEnding": {
+      "_type": "ClassLabel",
+      "id": null,
+      "names": [
+        "quiz1",
+        "quiz2"
+      ],
+      "names_file": null,
+      "num_classes": 2
+    },
+    "InputSentence1": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "InputSentence2": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "InputSentence3": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "InputSentence4": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "InputStoryid": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "RandomFifthSentenceQuiz1": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    },
+    "RandomFifthSentenceQuiz2": {
+      "_type": "Value",
+      "dtype": "string",
+      "id": null
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "post_processed": null,
+  "post_processing_size": null,
+  "size_in_bytes": 1195148,
+  "splits": {
+    "train": {
+      "dataset_name": "csv",
+      "name": "train",
+      "num_bytes": 620668,
+      "num_examples": 1871
+    }
+  },
+  "supervised_keys": null,
+  "version": {
+    "description": null,
+    "major": 0,
+    "minor": 0,
+    "patch": 0,
+    "version_str": "0.0.0"
+  }
+}
