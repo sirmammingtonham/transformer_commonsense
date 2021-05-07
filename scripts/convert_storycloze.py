@@ -4,7 +4,7 @@ from datasets import Dataset, load_dataset
 
 FILE_PATHS = [r'storycloze\cloze_test_test__spring2016 - cloze_test_ALL_test - cloze_test_test__spring2016 - cloze_test_ALL_test.csv', r'storycloze\cloze_test_val__spring2016 - cloze_test_ALL_val - cloze_test_val__spring2016 - cloze_test_ALL_val.csv']
 
-OUT_PATHS = [r'storycloze_test',r'storycloze_valid']
+OUT_PATHS = [r'storycloze\storycloze_test',r'storycloze\storycloze_valid']
 
 def convert(FILE_PATH, OUT_PATH):
     ids = []
@@ -17,7 +17,8 @@ def convert(FILE_PATH, OUT_PATH):
     answers = []
 
     dataset = load_dataset('csv', data_files=FILE_PATH)['train']
-
+    dataset = dataset.rename_column('AnswerRightEnding', 'label')
+    dataset = dataset.map(lambda x: {'label': x['label']-1}) # get labels into binary format
     print(dataset)
 
     feats = datasets.Features({
@@ -28,7 +29,7 @@ def convert(FILE_PATH, OUT_PATH):
         'InputSentence4': datasets.Value('string'),
         'RandomFifthSentenceQuiz1': datasets.Value('string'),
         'RandomFifthSentenceQuiz2': datasets.Value('string'),
-        'AnswerRightEnding': datasets.ClassLabel(2, ['quiz1', 'quiz2'])
+        'label': datasets.ClassLabel(2, ['ending1', 'ending2'])
     })
     dataset = dataset.cast(feats)
     print(dataset.features)

@@ -12,16 +12,6 @@
   },
   "download_size": 575510,
   "features": {
-    "AnswerRightEnding": {
-      "_type": "ClassLabel",
-      "id": null,
-      "names": [
-        "quiz1",
-        "quiz2"
-      ],
-      "names_file": null,
-      "num_classes": 2
-    },
     "InputSentence1": {
       "_type": "Value",
       "dtype": "string",
@@ -56,6 +46,16 @@
       "_type": "Value",
       "dtype": "string",
       "id": null
+    },
+    "label": {
+      "_type": "ClassLabel",
+      "id": null,
+      "names": [
+        "ending1",
+        "ending2"
+      ],
+      "names_file": null,
+      "num_classes": 2
     }
   },
   "homepage": "",

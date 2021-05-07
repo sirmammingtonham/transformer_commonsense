@@ -38,7 +38,7 @@ from transformers import (
     # PretrainedConfig,
     Trainer,
     TrainingArguments,
-    default_data_collator,
+    # default_data_collator,
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
@@ -48,6 +48,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.weighted_trainer import WeightedTrainer
+from src.util import default_data_collator
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.5.0.dev0")
@@ -182,6 +183,7 @@ class ModelArguments:
 
 balance_dataset = False
 one_hot_encode = False
+weight_classes = False
 
 def main():
     # set seed for repro
@@ -254,36 +256,46 @@ def main():
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
-    if data_args.task_name == 'category_prediction':
-        loaded_data = load_from_disk('./baseline_data/category')
-    elif data_args.task_name == 'importance_prediction':
-        loaded_data = load_from_disk('./baseline_data/importance')
-    if balance_dataset:
-        df = loaded_data.to_pandas()
-        g = df.groupby('label')
-        df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
-        loaded_data = Dataset.from_pandas(df.reset_index(drop=True))
-        feats = Features({
-            'story_id': Value('string'),
-            'first_sentence': Value('string'),
-            'second_sentence': Value('string'),
-            'third_sentence': Value('string'),
-            'fourth_sentence': Value('string'),
-            'fifth_sentence': Value('string'),
-            'label': ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
-        })
-        loaded_data = loaded_data.cast(feats)
+    if data_args.task_name == 'storycloze_prediction':
+        loaded_data = load_from_disk('./storycloze/storycloze_valid')
+        train_valid = loaded_data.train_test_split(test_size=0.1, seed=SEED)
+        test = load_from_disk('./storycloze/storycloze_test')
+        datasets = DatasetDict({
+            'train': train_valid['train'],
+            'test': test,
+            'validation': train_valid['test']}
+        )
+    else:
+        if data_args.task_name == 'category_prediction':
+            loaded_data = load_from_disk('./baseline_data/category')
+        elif data_args.task_name == 'importance_prediction':
+            loaded_data = load_from_disk('./baseline_data/importance')
+        if balance_dataset:
+            df = loaded_data.to_pandas()
+            g = df.groupby('label')
+            df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
+            loaded_data = Dataset.from_pandas(df.reset_index(drop=True))
+            feats = Features({
+                'story_id': Value('string'),
+                'first_sentence': Value('string'),
+                'second_sentence': Value('string'),
+                'third_sentence': Value('string'),
+                'fourth_sentence': Value('string'),
+                'fifth_sentence': Value('string'),
+                'label': ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
+            })
+            loaded_data = loaded_data.cast(feats)
 
-    train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
 
-    test_valid = train_testvalid['test'].train_test_split(
-        test_size=0.5, seed=SEED)
+        test_valid = train_testvalid['test'].train_test_split(
+            test_size=0.5, seed=SEED)
 
-    datasets = DatasetDict({
-        'train': train_testvalid['train'],
-        'test': test_valid['test'],
-        'validation': test_valid['train']}
-    )
+        datasets = DatasetDict({
+            'train': train_testvalid['train'],
+            'test': test_valid['test'],
+            'validation': test_valid['train']}
+        )
 
     # Labels
     is_regression = "regression" in data_args.task_name
@@ -300,6 +312,7 @@ def main():
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         num_labels=num_labels,
+        # problem_type='single_label_classification',
         finetuning_task=data_args.task_name,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
@@ -339,14 +352,23 @@ def main():
 
     def preprocess_function(examples):
         # Tokenize the texts
-        args = [sep_token.join((examples['first_sentence'][i], examples['second_sentence'][i],
-                                examples['third_sentence'][i], examples['fourth_sentence'][i],
-                                examples['fifth_sentence'][i]))
-                for i in range(len(examples['first_sentence']))
-                ]
-
+        if data_args.task_name == 'storycloze_prediction':
+            args = [sep_token.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
+                                    examples['InputSentence3'][i], examples['InputSentence4'][i],
+                                    examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
+                    for i in range(len(examples['InputSentence1']))
+                    ]
+        else:
+            args = [sep_token.join((examples['first_sentence'][i], examples['second_sentence'][i],
+                                    examples['third_sentence'][i], examples['fourth_sentence'][i],
+                                    examples['fifth_sentence'][i]))
+                    for i in range(len(examples['first_sentence']))
+                    ]
+        
         result = tokenizer(args, padding=padding,
                            max_length=max_seq_length, truncation=True)
+
+        result['label'] = [int(x) for x in examples['label']]
 
         if one_hot_encode and num_labels > 1:
             result['label'] = [np.array([int(i == label) for i in range(
@@ -364,8 +386,9 @@ def main():
         if "train" not in datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = datasets["train"]
-        class_weights = compute_class_weight(
-            'balanced', classes=np.unique(labels), y=labels)
+        if weight_classes:
+            class_weights = compute_class_weight(
+                'balanced', classes=np.unique(labels), y=labels)
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(
                 range(data_args.max_train_samples))
@@ -435,6 +458,14 @@ def main():
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
         data_collator=data_collator,
+    ) if weight_classes else Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
     )
 
     # Training
@@ -480,6 +511,13 @@ def main():
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         # Removing the `label` columns because it contains -1 and Trainer won't like that.
         # test_dataset.remove_columns_("label")
+        metrics = trainer.evaluate(eval_dataset=test_dataset)
+        max_val_samples = data_args.max_val_samples if data_args.max_val_samples is not None else len(
+            test_dataset)
+        metrics["eval_samples"] = min(max_val_samples, len(test_dataset))
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
+
         predictions = trainer.predict(
             test_dataset=test_dataset).predictions
         predictions = np.squeeze(
@@ -491,12 +529,13 @@ def main():
             with open(output_test_file, "w") as writer:
                 logger.info(f"***** Test results {data_args.task_name} *****")
                 writer.write("index\tprediction\n")
-                for index, item in enumerate(predictions):
+                for index, (item, label) in enumerate(zip(predictions, test_dataset['label'])):
                     if is_regression:
-                        writer.write(f"{index}\t{item:3.3f}\n")
+                        writer.write(f"{index}:\t{item:3.3f}\t/ {label:3.3f}\n")
                     else:
                         item = label_list[item]
-                        writer.write(f"{index}\t{item}\n")
+                        label = label_list[label]
+                        writer.write(f"{index}:\t{item}\t/ {label}\n")
 
 
 def _mp_fn(index):
