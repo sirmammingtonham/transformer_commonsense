@@ -301,7 +301,7 @@ def main():
     is_regression = "regression" in data_args.task_name
     if not is_regression:
         label_list = datasets["train"].features["label"].names
-        num_labels = len(label_list)
+        num_labels = 3#len(label_list)
     else:
         num_labels = 1
 
@@ -353,8 +353,8 @@ def main():
     def preprocess_function(examples):
         # Tokenize the texts
         if data_args.task_name == 'storycloze_prediction':
-            args = [sep_token.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
-                                    examples['InputSentence3'][i], examples['InputSentence4'][i],
+            args = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
+                                    examples['InputSentence3'][i], examples['InputSentence4'][i], sep_token,
                                     examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
                     for i in range(len(examples['InputSentence1']))
                     ]
