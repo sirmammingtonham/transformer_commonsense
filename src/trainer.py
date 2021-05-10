@@ -11,6 +11,8 @@ class CommonSenseTrainer(Trainer):
             self.class_weights = torch.as_tensor(
                 class_weights).float().to(self.args.device)
             print(self.class_weights)
+        else:
+            self.class_weights = None
         self.multi_label = multi_label
 
     def compute_loss(self, model, inputs, return_outputs=False):
@@ -40,7 +42,7 @@ class CommonSenseTrainer(Trainer):
                 # loss = loss_fct(
                 #     labeled_logits.view(-1, self.model.num_labels).float(), labels.view(-1))
                 loss_fct = CrossEntropyLoss(weight=self.class_weights)
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                loss = loss_fct(logits.view(-1, self.model.num_labels), labels.view(-1))
             
 
         # Save past state if it exists (from original implementation)

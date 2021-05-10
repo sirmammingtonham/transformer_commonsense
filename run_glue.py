@@ -261,36 +261,18 @@ def main():
             'validation': test_valid['train']}
         )
         class_weights = compute_class_weight('balanced', classes=np.unique(datasets["train"]["label"]), y=datasets["train"]["label"])
-    elif data_args.task_name is not None:
-        # Downloading and loading a dataset from the hub.
-        datasets = load_dataset("glue", data_args.task_name)
+    elif data_args.task_name == 'commonsense_importance_prediction':
+        loaded_data = load_from_disk('./baseline_data/importance')
+        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+        test_valid = train_testvalid['test'].train_test_split(
+            test_size=0.5, seed=SEED)
+        datasets = DatasetDict({
+            'train': train_testvalid['train'],
+            'test': test_valid['test'],
+            'validation': test_valid['train']}
+        )
     else:
-        # Loading a dataset from your local files.
-        # CSV/JSON training and evaluation files are needed.
-        data_files = {"train": data_args.train_file, "validation": data_args.validation_file}
-
-        # Get the test dataset: you can provide your own CSV/JSON test file (see below)
-        # when you use `do_predict` without specifying a GLUE benchmark task.
-        if training_args.do_predict:
-            if data_args.test_file is not None:
-                train_extension = data_args.train_file.split(".")[-1]
-                test_extension = data_args.test_file.split(".")[-1]
-                assert (
-                    test_extension == train_extension
-                ), "`test_file` should have the same extension (csv or json) as `train_file`."
-                data_files["test"] = data_args.test_file
-            else:
-                raise ValueError("Need either a GLUE task or a test file for `do_predict`.")
-
-        for key in data_files.keys():
-            logger.info(f"load a local file for {key}: {data_files[key]}")
-
-        if data_args.train_file.endswith(".csv"):
-            # Loading a dataset from local csv files
-            datasets = load_dataset("csv", data_files=data_files, cache_dir=model_args.cache_dir)
-        else:
-            # Loading a dataset from local json files
-            datasets = load_dataset("json", data_files=data_files, cache_dir=model_args.cache_dir)
+       raise Exception('need valid task')
     # See more about loading any type of standard or custom dataset at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
@@ -511,7 +493,7 @@ def main():
             # Removing the `label` columns because it contains -1 and Trainer won't like that.
             # predict_dataset.remove_columns_("label")
             predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
-            preds = np.array([p > THRESHOLD for p in preds]) if data_args.task_name == 'commonsense_importance_prediction' else np.argmax(preds, axis=1)
+            predictions = np.array([p > THRESHOLD for p in predictions]) if data_args.task_name == 'commonsense_importance_prediction' else np.argmax(predictions, axis=1)
 
             output_predict_file = os.path.join(training_args.output_dir, f"predict_results.txt")
             if trainer.is_world_process_zero():
