@@ -16,7 +16,7 @@ def dict_up(features):
 
 CAT_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'label']
 
-PRI_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'primary']
+PRI_FEATURES = ['story_id', 'first_sentence', 'second_sentence', 'third_sentence', 'fourth_sentence', 'fifth_sentence', 'label']
 
 CATEGORIES = ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven']
 
@@ -30,7 +30,7 @@ indicies = []
 
 if sys.argv[1] == 'cat':
     FILE_PATH = '../baseline_texts/Full_labeled_category_consensus_dataset_for_baseline.txt'
-elif sys.argv[1] == 'pri':
+elif sys.argv[1] == 'imp':
     FILE_PATH = '../baseline_texts/Full_labeled_primary_sentence_consensus_dataset_for_baseline.txt'
 
 with open(FILE_PATH, 'r') as f:
@@ -46,8 +46,12 @@ with open(FILE_PATH, 'r') as f:
         fifths.append(elements[5])
         if sys.argv[1] == 'cat':
             indicies.append(int(elements[6].replace('\n','')))
-        elif sys.argv[1] == 'pri':
-            indicies.append([elements[int(i) + 1] for i in elements[6].replace('\n','').split(',')])
+        elif sys.argv[1] == 'imp':
+            arr = [0, 0, 0, 0, 0]
+            for i in elements[6].replace('\n','').split(','):
+                arr[int(i)] = 1
+            indicies.append(arr)
+            # indicies.append([elements[int(i) + 1] for i in elements[6].replace('\n','').split(',')])
 
     if sys.argv[1] == 'cat':
         dataset = Dataset.from_dict(dict_up(CAT_FEATURES))
@@ -74,8 +78,10 @@ with open(FILE_PATH, 'r') as f:
             'third_sentence': datasets.Value('string'),
             'fourth_sentence': datasets.Value('string'),
             'fifth_sentence': datasets.Value('string'),
-            'importance': datasets.features.Sequence(datasets.Value('string'))
+            'label': datasets.features.Sequence(datasets.Value('int64'))
         })
         dataset = dataset.cast(feats)
         dataset.set_format('numpy')
+        # print(dataset.features)
+        # print(dataset['label'][:10])
         dataset.save_to_disk('../baseline_data/importance')

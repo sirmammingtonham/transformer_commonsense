@@ -22,11 +22,11 @@
       "dtype": "string",
       "id": null
     },
-    "primary": {
+    "label": {
       "_type": "Sequence",
       "feature": {
         "_type": "Value",
-        "dtype": "string",
+        "dtype": "int64",
         "id": null
       },
       "id": null,
