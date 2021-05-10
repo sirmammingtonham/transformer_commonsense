@@ -47,7 +47,7 @@ with open(FILE_PATH, 'r') as f:
         if sys.argv[1] == 'cat':
             indicies.append(int(elements[6].replace('\n','')))
         elif sys.argv[1] == 'imp':
-            arr = [0, 0, 0, 0, 0]
+            arr = [0, 0, 0, 0]
             for i in elements[6].replace('\n','').split(','):
                 arr[int(i)] = 1
             indicies.append(arr)

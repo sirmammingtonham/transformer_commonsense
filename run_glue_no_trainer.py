@@ -20,7 +20,7 @@ import os
 import random
 
 import datasets
-from datasets import load_dataset, load_metric, load_from_disk, DatasetDict
+from datasets import load_dataset, load_metric, load_from_disk, DatasetDict, Dataset, Features, ClassLabel, Value
 from torch.utils.data.dataloader import DataLoader
 from tqdm.auto import tqdm
 
@@ -34,15 +34,19 @@ from transformers import (
     DataCollatorWithPadding,
     PretrainedConfig,
     SchedulerType,
-    default_data_collator,
     get_scheduler,
     set_seed,
 )
 
+from src.util import default_data_collator
+from sklearn.utils.class_weight import compute_class_weight
+import torch
+from torch.nn import CrossEntropyLoss
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
-SEED = 69
+SEED = 690
 
 task_to_keys = {
     "cola": ("sentence", None),
@@ -164,7 +168,8 @@ def main():
     args = parse_args()
 
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
-    accelerator = Accelerator()
+    accelerator = Accelerator(fp16=True)
+
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -199,6 +204,7 @@ def main():
 
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
+    class_weights = None
     if args.task_name == 'storycloze_prediction':
         loaded_data = load_from_disk('./storycloze/storycloze_valid')
         train_valid = loaded_data.train_test_split(test_size=0.1, seed=SEED)
@@ -208,9 +214,45 @@ def main():
             'test': test,
             'validation': train_valid['test']}
         )
+    elif args.task_name == 'commonsense_category_prediction':
+        loaded_data = load_from_disk('./baseline_data/category')
+        # df = loaded_data.to_pandas()
+        # g = df.groupby('label')
+        # df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
+        # loaded_data = Dataset.from_pandas(df.reset_index(drop=True))
+        # feats = Features({
+        #     'story_id': Value('string'),
+        #     'first_sentence': Value('string'),
+        #     'second_sentence': Value('string'),
+        #     'third_sentence': Value('string'),
+        #     'fourth_sentence': Value('string'),
+        #     'fifth_sentence': Value('string'),
+        #     'label': ClassLabel(4, ['behavior_based', 'objective_based', 'emotional_based', 'goal_driven'])
+        # })
+        # loaded_data = loaded_data.cast(feats)
+        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+
+        test_valid = train_testvalid['test'].train_test_split(
+            test_size=0.5, seed=SEED)
+        raw_datasets = DatasetDict({
+            'train': train_testvalid['train'],
+            'test': test_valid['test'],
+            'validation': test_valid['train']}
+        )
+        class_weights = compute_class_weight('balanced', classes=np.unique(raw_datasets["train"]["label"]), y=raw_datasets["train"]["label"])
+        class_weights = torch.tensor(class_weights).float().cuda()
+    elif args.task_name == 'commonsense_importance_prediction':
+        loaded_data = load_from_disk('./baseline_data/importance')
+        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+        test_valid = train_testvalid['test'].train_test_split(
+            test_size=0.5, seed=SEED)
+        raw_datasets = DatasetDict({
+            'train': train_testvalid['train'],
+            'test': test_valid['test'],
+            'validation': test_valid['train']}
+        )
     elif args.task_name is not None:
-        # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset("glue", args.task_name)
+        raise Exception('not a valid task')
     else:
         # Loading the dataset from local csv or json file.
         data_files = {}
@@ -228,7 +270,7 @@ def main():
         is_regression = args.task_name == "stsb"
         if not is_regression:
             label_list = raw_datasets["train"].features["label"].names
-            num_labels = 3 #len(label_list)
+            num_labels = len(label_list)
         else:
             num_labels = 1
     else:
@@ -304,14 +346,19 @@ def main():
         # result = tokenizer(*texts, padding=padding, max_length=args.max_length, truncation=True)
 
         if args.task_name == 'storycloze_prediction':
-            texts = [sep_token.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
-                                    examples['InputSentence3'][i], examples['InputSentence4'][i],
-                                    examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
-                    for i in range(len(examples['InputSentence1']))
-                    ]
+            texts = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
+                                        examples['InputSentence3'][i], examples['InputSentence4'][i], sep_token,
+                                        examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
+                        for i in range(len(examples['InputSentence1']))
+                        ]
+            # texts = [sep_token.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
+            #                         examples['InputSentence3'][i], examples['InputSentence4'][i],
+            #                         examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
+            #         for i in range(len(examples['InputSentence1']))
+            #         ]
         else:
-            texts = [sep_token.join((examples['first_sentence'][i], examples['second_sentence'][i],
-                                    examples['third_sentence'][i], examples['fourth_sentence'][i],
+            texts = [' '.join((examples['first_sentence'][i], examples['second_sentence'][i],
+                                    examples['third_sentence'][i], examples['fourth_sentence'][i], sep_token,
                                     examples['fifth_sentence'][i]))
                     for i in range(len(examples['first_sentence']))
                     ]
@@ -408,14 +455,24 @@ def main():
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
-    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    progress_bar = tqdm(range(args.max_train_steps), desc='loss: ', disable=not accelerator.is_local_main_process)
     completed_steps = 0
 
     for epoch in range(args.num_train_epochs):
         model.train()
         for step, batch in enumerate(train_dataloader):
             outputs = model(**batch)
-            loss = outputs.loss
+            # loss = outputs.loss
+            logits = outputs.logits
+            labels = batch['labels']
+            label_index = (labels >= 0).nonzero()
+            labels = labels.long()
+            labeled_logits = torch.gather(logits, 0, label_index.expand(
+                label_index.size(0), logits.size(1)))
+            labels = torch.gather(labels, 0, label_index.view(-1))
+            loss_fct = CrossEntropyLoss(weight=class_weights)
+            loss = loss_fct(
+                labeled_logits.view(-1, num_labels).float(), labels.view(-1))
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
             if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
@@ -423,6 +480,8 @@ def main():
                 lr_scheduler.step()
                 optimizer.zero_grad()
                 progress_bar.update(1)
+                progress_bar.set_description(f'loss: {loss}')
+                progress_bar.refresh()
                 completed_steps += 1
 
             if completed_steps >= args.max_train_steps:
@@ -456,7 +515,7 @@ def main():
     model.eval()
     output_test_file = os.path.join(
                 args.output_dir, f"test_results_{args.task_name}.txt")
-    with open(output_test_file, "a+") as writer:
+    with open(output_test_file, "w+") as writer:
         writer.write("index\tprediction\n")
         for step, batch in enumerate(eval_dataloader):
             outputs = model(**batch)
@@ -475,8 +534,9 @@ def main():
                 references=accelerator.gather(batch["labels"]),
             )
 
-    eval_metric = metric.compute()
-    logger.info(f"mnli-mm: {eval_metric}")
+        eval_metric = metric.compute()
+        logger.info(f"test set accuracy: {eval_metric}")
+        writer.write(f"{eval_metric}")
 
 
 if __name__ == "__main__":

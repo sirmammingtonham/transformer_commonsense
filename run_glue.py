@@ -35,13 +35,15 @@ from transformers import (
     EvalPrediction,
     HfArgumentParser,
     PretrainedConfig,
-    Trainer,
+    # Trainer,
     TrainingArguments,
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 from transformers.utils import check_min_version
 from src.util import default_data_collator
+from src.trainer import CommonSenseTrainer
+from sklearn.utils.class_weight import compute_class_weight
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.6.0.dev0")
@@ -59,7 +61,8 @@ task_to_keys = {
 }
 
 logger = logging.getLogger(__name__)
-SEED = 69
+SEED = 690
+THRESHOLD = 0.5
 
 @dataclass
 class DataTrainingArguments:
@@ -236,67 +239,64 @@ def main():
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
-    if data_args.task_name is not None:
-        # Downloading and loading a dataset from the hub.
-        datasets = load_dataset("glue", data_args.task_name, cache_dir=model_args.cache_dir)
-    else:
+    class_weights = None
+    if data_args.task_name == 'storycloze_prediction':
         loaded_data = load_from_disk('./storycloze/storycloze_valid')
         train_valid = loaded_data.train_test_split(test_size=0.1, seed=SEED)
         test = load_from_disk('./storycloze/storycloze_test')
         datasets = DatasetDict({
-            'train': train_valid['train'].flatten_indices(),
-            'validation': train_valid['test'].flatten_indices(),
-            'test': test.flatten_indices(),
-            }
+            'train': train_valid['train'],
+            'test': test,
+            'validation': train_valid['test']}
         )
+    elif data_args.task_name == 'commonsense_category_prediction':
+        loaded_data = load_from_disk('./baseline_data/category')
+        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+
+        test_valid = train_testvalid['test'].train_test_split(
+            test_size=0.5, seed=SEED)
+        datasets = DatasetDict({
+            'train': train_testvalid['train'],
+            'test': test_valid['test'],
+            'validation': test_valid['train']}
+        )
+        class_weights = compute_class_weight('balanced', classes=np.unique(datasets["train"]["label"]), y=datasets["train"]["label"])
+    elif data_args.task_name is not None:
+        # Downloading and loading a dataset from the hub.
+        datasets = load_dataset("glue", data_args.task_name)
+    else:
         # Loading a dataset from your local files.
         # CSV/JSON training and evaluation files are needed.
-        # data_files = {"train": data_args.train_file, "validation": data_args.validation_file}
+        data_files = {"train": data_args.train_file, "validation": data_args.validation_file}
 
-        # # Get the test dataset: you can provide your own CSV/JSON test file (see below)
-        # # when you use `do_predict` without specifying a GLUE benchmark task.
-        # if training_args.do_predict:
-        #     if data_args.test_file is not None:
-        #         train_extension = data_args.train_file.split(".")[-1]
-        #         test_extension = data_args.test_file.split(".")[-1]
-        #         assert (
-        #             test_extension == train_extension
-        #         ), "`test_file` should have the same extension (csv or json) as `train_file`."
-        #         data_files["test"] = data_args.test_file
-        #     else:
-        #         raise ValueError("Need either a GLUE task or a test file for `do_predict`.")
+        # Get the test dataset: you can provide your own CSV/JSON test file (see below)
+        # when you use `do_predict` without specifying a GLUE benchmark task.
+        if training_args.do_predict:
+            if data_args.test_file is not None:
+                train_extension = data_args.train_file.split(".")[-1]
+                test_extension = data_args.test_file.split(".")[-1]
+                assert (
+                    test_extension == train_extension
+                ), "`test_file` should have the same extension (csv or json) as `train_file`."
+                data_files["test"] = data_args.test_file
+            else:
+                raise ValueError("Need either a GLUE task or a test file for `do_predict`.")
 
-        # for key in data_files.keys():
-        #     logger.info(f"load a local file for {key}: {data_files[key]}")
+        for key in data_files.keys():
+            logger.info(f"load a local file for {key}: {data_files[key]}")
 
-        # if data_args.train_file.endswith(".csv"):
-        #     # Loading a dataset from local csv files
-        #     datasets = load_dataset("csv", data_files=data_files, cache_dir=model_args.cache_dir)
-        # else:
-        #     # Loading a dataset from local json files
-        #     datasets = load_dataset("json", data_files=data_files, cache_dir=model_args.cache_dir)
+        if data_args.train_file.endswith(".csv"):
+            # Loading a dataset from local csv files
+            datasets = load_dataset("csv", data_files=data_files, cache_dir=model_args.cache_dir)
+        else:
+            # Loading a dataset from local json files
+            datasets = load_dataset("json", data_files=data_files, cache_dir=model_args.cache_dir)
     # See more about loading any type of standard or custom dataset at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
     # Labels
-    if data_args.task_name is not None:
-        is_regression = data_args.task_name == "stsb"
-        if not is_regression:
-            label_list = datasets["train"].features["label"].names
-            num_labels = len(label_list)
-        else:
-            num_labels = 1
-    else:
-        # Trying to have good defaults here, don't hesitate to tweak to your needs.
-        is_regression = False #datasets["train"].features["label"].dtype in ["float32", "float64"]
-        if is_regression:
-            num_labels = 1
-        else:
-            # A useful fast method:
-            # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.unique
-            label_list = datasets["train"].unique("label")
-            label_list.sort()  # Let's sort it for determinism
-            num_labels = len(label_list)
+    label_list = datasets["train"].features["label"].names if data_args.task_name != 'commonsense_importance_prediction' else ['sentence1', 'sentence2', 'sentence3', 'sentence4']
+    num_labels = 2 if data_args.task_name == 'storycloze_prediction' else 4
 
     # Load pretrained model and tokenizer
     #
@@ -326,19 +326,19 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    # Preprocessing the datasets
-    if data_args.task_name is not None:
-        sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
-    else:
-        # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
-        non_label_column_names = [name for name in datasets["train"].column_names if name != "label"]
-        if "sentence1" in non_label_column_names and "sentence2" in non_label_column_names:
-            sentence1_key, sentence2_key = "sentence1", "sentence2"
-        else:
-            if len(non_label_column_names) >= 2:
-                sentence1_key, sentence2_key = non_label_column_names[:2]
-            else:
-                sentence1_key, sentence2_key = non_label_column_names[0], None
+    # # Preprocessing the datasets
+    # if data_args.task_name is not None:
+    #     sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
+    # else:
+    #     # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
+    #     non_label_column_names = [name for name in datasets["train"].column_names if name != "label"]
+    #     if "sentence1" in non_label_column_names and "sentence2" in non_label_column_names:
+    #         sentence1_key, sentence2_key = "sentence1", "sentence2"
+    #     else:
+    #         if len(non_label_column_names) >= 2:
+    #             sentence1_key, sentence2_key = non_label_column_names[:2]
+    #         else:
+    #             sentence1_key, sentence2_key = non_label_column_names[0], None
 
     # Padding strategy
     if data_args.pad_to_max_length:
@@ -348,24 +348,24 @@ def main():
         padding = False
 
     # Some models have set the order of the labels to use, so let's make sure we do use it.
-    label_to_id = None
-    if (
-        model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
-        and data_args.task_name is not None
-        and not is_regression
-    ):
-        # Some have all caps in their config, some don't.
-        label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
-        if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
-            label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
-        else:
-            logger.warning(
-                "Your model seems to have been trained with labels, but they don't match the dataset: ",
-                f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
-                "\nIgnoring the model labels as a result.",
-            )
-    elif data_args.task_name is None and not is_regression:
-        label_to_id = {v: i for i, v in enumerate(label_list)}
+    # label_to_id = None
+    # if (
+    #     model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
+    #     and data_args.task_name is not None
+    #     and not is_regression
+    # ):
+    #     # Some have all caps in their config, some don't.
+    #     label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
+    #     if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
+    #         label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
+    #     else:
+    #         logger.warning(
+    #             "Your model seems to have been trained with labels, but they don't match the dataset: ",
+    #             f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
+    #             "\nIgnoring the model labels as a result.",
+    #         )
+    # elif data_args.task_name is None and not is_regression:
+    #     label_to_id = {v: i for i, v in enumerate(label_list)}
 
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(
@@ -377,44 +377,38 @@ def main():
     sep_token = tokenizer.special_tokens_map['sep_token']
     def preprocess_function(examples):
         # Tokenize the texts
-        if data_args.task_name is not None:  
-            args = (
-                (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
-            )
-            result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
-        else:
+        if data_args.task_name == 'storycloze_prediction':
             args = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
                                         examples['InputSentence3'][i], examples['InputSentence4'][i], sep_token,
                                         examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
                         for i in range(len(examples['InputSentence1']))
                         ]
-            result = tokenizer(args, padding=padding,
-                           max_length=max_seq_length, truncation=True)
+            result = tokenizer(args, padding=padding, max_length=max_seq_length, truncation=True)
+        else:
+            args = [' '.join((examples['first_sentence'][i], examples['second_sentence'][i],
+                                    examples['third_sentence'][i], examples['fourth_sentence'][i], sep_token,
+                                    examples['fifth_sentence'][i]))
+                    for i in range(len(examples['first_sentence']))
+                    ]
+            result = tokenizer(args, padding=padding, max_length=max_seq_length, truncation=True)
 
-        # Map labels to IDs (not necessary for GLUE tasks)
-        if label_to_id is not None and "label" in examples:
-            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
+        result["labels"] = examples["label"]
+
         return result
 
     datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache)
     if training_args.do_train:
-        if "train" not in datasets:
-            raise ValueError("--do_train requires a train dataset")
         train_dataset = datasets["train"]
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(range(data_args.max_train_samples))
 
     if training_args.do_eval:
-        if "validation" not in datasets and "validation_matched" not in datasets:
-            raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]
+        eval_dataset = datasets["validation"]
         if data_args.max_eval_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
 
     if training_args.do_predict or data_args.task_name is not None or data_args.test_file is not None:
-        if "test" not in datasets and "test_matched" not in datasets:
-            raise ValueError("--do_predict requires a test dataset")
-        predict_dataset = datasets["test_matched" if data_args.task_name == "mnli" else "test"]
+        predict_dataset = datasets["test"]
         if data_args.max_predict_samples is not None:
             predict_dataset = predict_dataset.select(range(data_args.max_predict_samples))
 
@@ -424,27 +418,17 @@ def main():
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # Get the metric function
-    if data_args.task_name is not None:
-        metric = load_metric("glue", data_args.task_name)
-    else:
-        metric = load_metric("accuracy")
-    # TODO: When datasets metrics include regular accuracy, make an else here and remove special branch from
-    # compute_metrics
+    metric = load_metric("accuracy")
 
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
-        if data_args.task_name is not None:
-            result = metric.compute(predictions=preds, references=p.label_ids)
-            if len(result) > 1:
-                result["combined_score"] = np.mean(list(result.values())).item()
-            return result
-        elif is_regression:
-            return {"mse": ((preds - p.label_ids) ** 2).mean().item()}
-        else:
-            return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
+        preds = np.array([p > THRESHOLD for p in preds]) if data_args.task_name == 'commonsense_importance_prediction' else np.argmax(preds, axis=1)
+        result = metric.compute(predictions=preds, references=p.label_ids)
+        if len(result) > 1:
+            result["combined_score"] = np.mean(list(result.values())).item()
+        return result
 
     # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
     if data_args.pad_to_max_length:
@@ -455,7 +439,9 @@ def main():
         data_collator = None
 
     # Initialize our Trainer
-    trainer = Trainer(
+    trainer = CommonSenseTrainer(
+        class_weights=class_weights,
+        multi_label=data_args.task_name=='commonsense_importance_prediction',
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
@@ -525,7 +511,7 @@ def main():
             # Removing the `label` columns because it contains -1 and Trainer won't like that.
             # predict_dataset.remove_columns_("label")
             predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
-            predictions = np.squeeze(predictions) if is_regression else np.argmax(predictions, axis=1)
+            preds = np.array([p > THRESHOLD for p in preds]) if data_args.task_name == 'commonsense_importance_prediction' else np.argmax(preds, axis=1)
 
             output_predict_file = os.path.join(training_args.output_dir, f"predict_results.txt")
             if trainer.is_world_process_zero():
@@ -533,12 +519,9 @@ def main():
                     logger.info(f"***** Predict results {task} *****")
                     writer.write("index\tprediction\n")
                     for index, (item, label) in enumerate(zip(predictions, predict_dataset['label'])):
-                        if is_regression:
-                            writer.write(f"{index}:\t{item:3.3f} / {label:3.3f}\n")
-                        else:
-                            item = label_list[item]
-                            label = label_list[label]
-                            writer.write(f"{index}:\t{item} / {label}\n")
+                        item = label_list[item]
+                        label = label_list[label]
+                        writer.write(f"{index}:\t{item} / {label}\n")
 
     if training_args.push_to_hub:
         trainer.push_to_hub()
