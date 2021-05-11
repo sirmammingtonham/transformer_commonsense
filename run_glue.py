@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
-from datasets import load_dataset, load_metric, load_from_disk, DatasetDict
+from datasets import load_metric, load_from_disk, DatasetDict
 
 import transformers
 from transformers import (
@@ -34,12 +34,10 @@ from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
-    PretrainedConfig,
-    # Trainer,
     TrainingArguments,
     set_seed,
 )
-from transformers.trainer_utils import get_last_checkpoint, is_main_process
+from transformers.trainer_utils import get_last_checkpoint, is_main_process, set_seed
 from transformers.utils import check_min_version
 from src.util import default_data_collator
 from src.trainer import CommonSenseTrainer
@@ -63,6 +61,7 @@ task_to_keys = {
 logger = logging.getLogger(__name__)
 SEED = 690
 THRESHOLD = 0.5
+set_seed(SEED)
 
 @dataclass
 class DataTrainingArguments:
@@ -124,21 +123,6 @@ class DataTrainingArguments:
     )
     test_file: Optional[str] = field(default=None, metadata={"help": "A csv or a json file containing the test data."})
 
-    # def __post_init__(self):
-    #     if self.task_name is not None:
-    #         self.task_name = self.task_name.lower()
-    #         if self.task_name not in task_to_keys.keys():
-    #             raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
-    #     elif self.train_file is None or self.validation_file is None:
-    #         raise ValueError("Need either a GLUE task or a training/validation file.")
-    #     else:
-    #         train_extension = self.train_file.split(".")[-1]
-    #         assert train_extension in ["csv", "json"], "`train_file` should be a csv or a json file."
-    #         validation_extension = self.validation_file.split(".")[-1]
-    #         assert (
-    #             validation_extension == train_extension
-    #         ), "`validation_file` should have the same extension (csv or json) as `train_file`."
-
 
 @dataclass
 class ModelArguments:
@@ -188,6 +172,8 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    training_args.seed = SEED
 
     # Detecting last checkpoint.
     last_checkpoint = None
@@ -308,46 +294,12 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    # # Preprocessing the datasets
-    # if data_args.task_name is not None:
-    #     sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
-    # else:
-    #     # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
-    #     non_label_column_names = [name for name in datasets["train"].column_names if name != "label"]
-    #     if "sentence1" in non_label_column_names and "sentence2" in non_label_column_names:
-    #         sentence1_key, sentence2_key = "sentence1", "sentence2"
-    #     else:
-    #         if len(non_label_column_names) >= 2:
-    #             sentence1_key, sentence2_key = non_label_column_names[:2]
-    #         else:
-    #             sentence1_key, sentence2_key = non_label_column_names[0], None
-
     # Padding strategy
     if data_args.pad_to_max_length:
         padding = "max_length"
     else:
         # We will pad later, dynamically at batch creation, to the max sequence length in each batch
         padding = False
-
-    # Some models have set the order of the labels to use, so let's make sure we do use it.
-    # label_to_id = None
-    # if (
-    #     model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
-    #     and data_args.task_name is not None
-    #     and not is_regression
-    # ):
-    #     # Some have all caps in their config, some don't.
-    #     label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
-    #     if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
-    #         label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
-    #     else:
-    #         logger.warning(
-    #             "Your model seems to have been trained with labels, but they don't match the dataset: ",
-    #             f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
-    #             "\nIgnoring the model labels as a result.",
-    #         )
-    # elif data_args.task_name is None and not is_regression:
-    #     label_to_id = {v: i for i, v in enumerate(label_list)}
 
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(

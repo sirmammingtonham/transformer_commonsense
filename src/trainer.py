@@ -7,7 +7,7 @@ class CommonSenseTrainer(Trainer):
     def __init__(self, class_weights=None, multi_label=False, **kwargs):
         super().__init__(**kwargs)
         if class_weights is not None:
-            assert(len(class_weights) == kwargs['model'].num_labels)
+            assert(len(class_weights) == self.model.num_labels)
             self.class_weights = torch.as_tensor(
                 class_weights).float().to(self.args.device)
             print(self.class_weights)
