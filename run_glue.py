@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
-from datasets import load_metric, load_from_disk, DatasetDict
+from datasets import load_from_disk, DatasetDict
 
 import transformers
 from transformers import (
@@ -39,24 +39,12 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process, set_seed
 from transformers.utils import check_min_version
-from src.util import default_data_collator
-from src.trainer import CommonSenseTrainer
+from src.trainer import CommonSenseTrainer, default_data_collator
 from sklearn.utils.class_weight import compute_class_weight
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_recall_fscore_support, hamming_loss
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.6.0.dev0")
-
-task_to_keys = {
-    "cola": ("sentence", None),
-    "mnli": ("premise", "hypothesis"),
-    "mrpc": ("sentence1", "sentence2"),
-    "qnli": ("question", "sentence"),
-    "qqp": ("question1", "question2"),
-    "rte": ("sentence1", "sentence2"),
-    "sst2": ("sentence", None),
-    "stsb": ("sentence1", "sentence2"),
-    "wnli": ("sentence1", "sentence2"),
-}
 
 logger = logging.getLogger(__name__)
 SEED = 690
@@ -75,7 +63,7 @@ class DataTrainingArguments:
 
     task_name: Optional[str] = field(
         default=None,
-        metadata={"help": "The name of the task to train on: " + ", ".join(task_to_keys.keys())},
+        metadata={"help": "The name of the task to train on: storycloze_prediction', 'commonsense_category_prediction', 'commonsense_importance_prediction"},
     )
     max_seq_length: int = field(
         default=128,
@@ -174,6 +162,7 @@ def main():
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     training_args.seed = SEED
+    is_multilabel = data_args.task_name == 'commonsense_importance_prediction'
 
     # Detecting last checkpoint.
     last_checkpoint = None
@@ -263,7 +252,7 @@ def main():
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
     # Labels
-    label_list = datasets["train"].features["label"].names if data_args.task_name != 'commonsense_importance_prediction' else ['sentence1', 'sentence2', 'sentence3', 'sentence4']
+    label_list = datasets["train"].features["label"].names if not is_multilabel else ['sentence1', 'sentence2', 'sentence3', 'sentence4']
     num_labels = 2 if data_args.task_name == 'storycloze_prediction' else 4
 
     # Load pretrained model and tokenizer
@@ -326,7 +315,7 @@ def main():
                     ]
             result = tokenizer(args, padding=padding, max_length=max_seq_length, truncation=True)
 
-        result["labels"] = examples["label"]
+        # result["labels"] = examples["label"]
 
         return result
 
@@ -351,17 +340,19 @@ def main():
         for index in random.sample(range(len(train_dataset)), 3):
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
-    # Get the metric function
-    metric = load_metric("accuracy")
-
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        preds = np.array([p > THRESHOLD for p in preds]) if data_args.task_name == 'commonsense_importance_prediction' else np.argmax(preds, axis=1)
-        result = metric.compute(predictions=preds, references=p.label_ids)
-        if len(result) > 1:
-            result["combined_score"] = np.mean(list(result.values())).item()
+        preds = np.argmax(preds, axis=1) if not is_multilabel else np.array([p > THRESHOLD for p in preds])
+        precision, recall, fscore, _ = precision_recall_fscore_support(p.label_ids, preds, average='weighted', zero_division=0)
+        accuracy = accuracy_score(p.label_ids, preds)
+        if not is_multilabel:
+            balanced_accuracy = balanced_accuracy_score(p.label_ids, preds)
+            result = {'accuracy': accuracy, 'balanced_accuracy': balanced_accuracy, 'precision': precision, 'recall': recall, 'f1': fscore}
+        else:
+            hamming_score = hamming_loss(p.label_ids, preds)
+            result = {'accuracy': accuracy, 'hamming_score': hamming_score, 'precision': precision, 'recall': recall, 'f1': fscore}
         return result
 
     # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
@@ -375,7 +366,7 @@ def main():
     # Initialize our Trainer
     trainer = CommonSenseTrainer(
         class_weights=class_weights,
-        multi_label=data_args.task_name=='commonsense_importance_prediction',
+        multi_label=is_multilabel,
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
@@ -409,53 +400,37 @@ def main():
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
-        eval_datasets = [eval_dataset]
-        if data_args.task_name == "mnli":
-            tasks.append("mnli-mm")
-            eval_datasets.append(datasets["validation_mismatched"])
+        metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
-        for eval_dataset, task in zip(eval_datasets, tasks):
-            metrics = trainer.evaluate(eval_dataset=eval_dataset)
+        max_eval_samples = (
+            data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        )
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
-            max_eval_samples = (
-                data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
-            )
-            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
-
-            trainer.log_metrics("eval", metrics)
-            trainer.save_metrics("eval", metrics)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
 
-        # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
-        predict_datasets = [predict_dataset]
-        if data_args.task_name == "mnli":
-            tasks.append("mnli-mm")
-            predict_datasets.append(datasets["test_mismatched"])
+        metrics = trainer.evaluate(eval_dataset=predict_dataset)
+        metrics["eval_samples"] = len(predict_dataset)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
+        # Removing the `label` columns because it contains -1 and Trainer won't like that.
+        # predict_dataset.remove_columns_("label")
+        predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
+        predictions = np.argmax(predictions, axis=1) if not is_multilabel else np.array([p > THRESHOLD for p in predictions])
 
-        for predict_dataset, task in zip(predict_datasets, tasks):
-            metrics = trainer.evaluate(eval_dataset=predict_dataset)
-            metrics["eval_samples"] = len(predict_dataset)
-            trainer.log_metrics("eval", metrics)
-            trainer.save_metrics("eval", metrics)
-            # Removing the `label` columns because it contains -1 and Trainer won't like that.
-            # predict_dataset.remove_columns_("label")
-            predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
-            predictions = np.array([p > THRESHOLD for p in predictions]) if data_args.task_name == 'commonsense_importance_prediction' else np.argmax(predictions, axis=1)
-
-            output_predict_file = os.path.join(training_args.output_dir, f"predict_results.txt")
-            if trainer.is_world_process_zero():
-                with open(output_predict_file, "w") as writer:
-                    logger.info(f"***** Predict results {task} *****")
-                    writer.write("index\tprediction\n")
-                    for index, (item, label) in enumerate(zip(predictions, predict_dataset['label'])):
-                        item = label_list[item]
-                        label = label_list[label]
-                        writer.write(f"{index}:\t{item} / {label}\n")
+        output_predict_file = os.path.join(training_args.output_dir, f"predict_results.txt")
+        if trainer.is_world_process_zero():
+            with open(output_predict_file, "w") as writer:
+                logger.info(f"***** Predict results {data_args.task_name} *****")
+                writer.write("index\tprediction\n")
+                for index, (item, label) in enumerate(zip(predictions, predict_dataset['label'])):
+                    item = label_list[item] if not is_multilabel else [label_list[i] for i, x in enumerate(item) if x]
+                    label = label_list[label] if not is_multilabel else [label_list[i] for i, x in enumerate(label) if x]
+                    writer.write(f"{index}: {item}\t/ {label}\n")
 
     if training_args.push_to_hub:
         trainer.push_to_hub()
