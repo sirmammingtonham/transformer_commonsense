@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
-from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+from transformers.modeling_outputs import CausalLMOutput
 from transformers import DebertaModel, DebertaPreTrainedModel
 
 from typing import Tuple
@@ -75,13 +75,10 @@ class DebertaLMHeadModel(DebertaPreTrainedModel):
 
         transformer_outputs = self.deberta(
             input_ids,
-            past_key_values=past_key_values,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
-            head_mask=head_mask,
             inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -104,13 +101,11 @@ class DebertaLMHeadModel(DebertaPreTrainedModel):
             output = (lm_logits,) + transformer_outputs[1:]
             return ((loss,) + output) if loss is not None else output
 
-        return CausalLMOutputWithCrossAttentions(
+        return CausalLMOutput(
             loss=loss,
             logits=lm_logits,
-            past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
-            cross_attentions=transformer_outputs.cross_attentions,
         )
     
     @staticmethod
