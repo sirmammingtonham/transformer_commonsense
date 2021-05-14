@@ -51,6 +51,7 @@ SEED = 690
 THRESHOLD = 0.5
 set_seed(SEED)
 
+
 @dataclass
 class DataTrainingArguments:
     """
@@ -109,7 +110,8 @@ class DataTrainingArguments:
     validation_file: Optional[str] = field(
         default=None, metadata={"help": "A csv or a json file containing the validation data."}
     )
-    test_file: Optional[str] = field(default=None, metadata={"help": "A csv or a json file containing the test data."})
+    test_file: Optional[str] = field(default=None, metadata={
+                                     "help": "A csv or a json file containing the test data."})
 
 
 @dataclass
@@ -119,7 +121,8 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
@@ -129,15 +132,18 @@ class ModelArguments:
     )
     cache_dir: Optional[str] = field(
         default=None,
-        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
     )
     use_fast_tokenizer: bool = field(
         default=True,
-        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+        metadata={
+            "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
     )
     model_revision: str = field(
         default="main",
-        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."},
     )
     use_auth_token: bool = field(
         default=False,
@@ -153,11 +159,13 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args = parser.parse_json_file(
+            json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -185,7 +193,8 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-    logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
+    logger.setLevel(logging.INFO if is_main_process(
+        training_args.local_rank) else logging.WARN)
 
     # Log on each process the small summary:
     logger.warning(
@@ -226,7 +235,8 @@ def main():
         )
     elif data_args.task_name == 'commonsense_category_prediction':
         loaded_data = load_from_disk('./baseline_data/category')
-        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+        train_testvalid = loaded_data.train_test_split(
+            test_size=0.2, seed=SEED)
 
         test_valid = train_testvalid['test'].train_test_split(
             test_size=0.5, seed=SEED)
@@ -235,10 +245,12 @@ def main():
             'test': test_valid['test'],
             'validation': test_valid['train']}
         )
-        class_weights = compute_class_weight('balanced', classes=np.unique(datasets["train"]["label"]), y=datasets["train"]["label"])
+        class_weights = compute_class_weight('balanced', classes=np.unique(
+            datasets["train"]["label"]), y=datasets["train"]["label"])
     elif data_args.task_name == 'commonsense_importance_prediction':
         loaded_data = load_from_disk('./baseline_data/importance')
-        train_testvalid = loaded_data.train_test_split(test_size=0.2, seed=SEED)
+        train_testvalid = loaded_data.train_test_split(
+            test_size=0.2, seed=SEED)
         test_valid = train_testvalid['test'].train_test_split(
             test_size=0.5, seed=SEED)
         datasets = DatasetDict({
@@ -247,12 +259,13 @@ def main():
             'validation': test_valid['train']}
         )
     else:
-       raise Exception('need valid task')
+        raise Exception('need valid task')
     # See more about loading any type of standard or custom dataset at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
     # Labels
-    label_list = datasets["train"].features["label"].names if not is_multilabel else ['sentence1', 'sentence2', 'sentence3', 'sentence4']
+    label_list = datasets["train"].features["label"].names if not is_multilabel else [
+        'sentence1', 'sentence2', 'sentence3', 'sentence4']
     num_labels = 2 if data_args.task_name == 'storycloze_prediction' else 4
 
     # Load pretrained model and tokenizer
@@ -298,68 +311,86 @@ def main():
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
     sep_token = tokenizer.special_tokens_map['sep_token']
+
     def preprocess_function(examples):
         # Tokenize the texts
         if data_args.task_name == 'storycloze_prediction':
             args = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
-                                        examples['InputSentence3'][i], examples['InputSentence4'][i], sep_token,
-                                        examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
-                        for i in range(len(examples['InputSentence1']))
-                        ]
-            result = tokenizer(args, padding=padding, max_length=max_seq_length, truncation=True)
+                              examples['InputSentence3'][i], examples['InputSentence4'][i], sep_token,
+                              examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
+                    for i in range(len(examples['InputSentence1']))
+                    ]
+            result = tokenizer(args, padding=padding,
+                               max_length=max_seq_length, truncation=True)
         else:
             args = [' '.join((examples['first_sentence'][i], examples['second_sentence'][i],
-                                    examples['third_sentence'][i], examples['fourth_sentence'][i], sep_token,
-                                    examples['fifth_sentence'][i]))
+                              examples['third_sentence'][i], examples['fourth_sentence'][i], sep_token,
+                              examples['fifth_sentence'][i]))
                     for i in range(len(examples['first_sentence']))
                     ]
-            result = tokenizer(args, padding=padding, max_length=max_seq_length, truncation=True)
+            result = tokenizer(args, padding=padding,
+                               max_length=max_seq_length, truncation=True)
 
         # result["labels"] = examples["label"]
 
         return result
 
-    datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache)
+    column_names = datasets["train"].column_names
+    # we want to remove extra columns from dataset except for label
+    column_names.remove("label")
+
+    datasets = datasets.map(preprocess_function, batched=True, remove_columns=column_names,
+                            load_from_cache_file=not data_args.overwrite_cache)
     if training_args.do_train:
         train_dataset = datasets["train"]
         if data_args.max_train_samples is not None:
-            train_dataset = train_dataset.select(range(data_args.max_train_samples))
+            train_dataset = train_dataset.select(
+                range(data_args.max_train_samples))
 
     if training_args.do_eval:
         eval_dataset = datasets["validation"]
         if data_args.max_eval_samples is not None:
-            eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
+            eval_dataset = eval_dataset.select(
+                range(data_args.max_eval_samples))
 
     if training_args.do_predict or data_args.task_name is not None or data_args.test_file is not None:
         predict_dataset = datasets["test"]
         if data_args.max_predict_samples is not None:
-            predict_dataset = predict_dataset.select(range(data_args.max_predict_samples))
+            predict_dataset = predict_dataset.select(
+                range(data_args.max_predict_samples))
 
     # Log a few random samples from the training set:
     if training_args.do_train:
         for index in random.sample(range(len(train_dataset)), 3):
-            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+            logger.info(
+                f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
-        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        preds = np.argmax(preds, axis=1) if not is_multilabel else np.array([p > THRESHOLD for p in preds])
-        precision, recall, fscore, _ = precision_recall_fscore_support(p.label_ids, preds, average='weighted', zero_division=0)
+        preds = p.predictions[0] if isinstance(
+            p.predictions, tuple) else p.predictions
+        preds = np.argmax(preds, axis=1) if not is_multilabel else np.array(
+            [p > THRESHOLD for p in preds])
+        precision, recall, fscore, _ = precision_recall_fscore_support(
+            p.label_ids, preds, average='weighted', zero_division=0)
         accuracy = accuracy_score(p.label_ids, preds)
         if not is_multilabel:
             balanced_accuracy = balanced_accuracy_score(p.label_ids, preds)
-            result = {'accuracy': accuracy, 'balanced_accuracy': balanced_accuracy, 'precision': precision, 'recall': recall, 'f1': fscore}
+            result = {'accuracy': accuracy, 'balanced_accuracy': balanced_accuracy,
+                      'precision': precision, 'recall': recall, 'f1': fscore}
         else:
             hamming_score = hamming_loss(p.label_ids, preds)
-            result = {'accuracy': accuracy, 'hamming_score': hamming_score, 'precision': precision, 'recall': recall, 'f1': fscore}
+            result = {'accuracy': accuracy, 'hamming_score': hamming_score,
+                      'precision': precision, 'recall': recall, 'f1': fscore}
         return result
 
     # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
     if data_args.pad_to_max_length:
         data_collator = default_data_collator
     elif training_args.fp16:
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
+        data_collator = DataCollatorWithPadding(
+            tokenizer, pad_to_multiple_of=8)
     else:
         data_collator = None
 
@@ -386,7 +417,8 @@ def main():
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         metrics = train_result.metrics
         max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(
+                train_dataset)
         )
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
@@ -403,7 +435,8 @@ def main():
         metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
         max_eval_samples = (
-            data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+            data_args.max_eval_samples if data_args.max_eval_samples is not None else len(
+                eval_dataset)
         )
         metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
@@ -419,18 +452,24 @@ def main():
         trainer.save_metrics("eval", metrics)
         # Removing the `label` columns because it contains -1 and Trainer won't like that.
         # predict_dataset.remove_columns_("label")
-        predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
-        predictions = np.argmax(predictions, axis=1) if not is_multilabel else np.array([p > THRESHOLD for p in predictions])
+        predictions = trainer.predict(
+            predict_dataset, metric_key_prefix="predict").predictions
+        predictions = np.argmax(predictions, axis=1) if not is_multilabel else np.array(
+            [p > THRESHOLD for p in predictions])
 
-        output_predict_file = os.path.join(training_args.output_dir, f"predict_results.txt")
+        output_predict_file = os.path.join(
+            training_args.output_dir, f"predict_results.txt")
         if trainer.is_world_process_zero():
             with open(output_predict_file, "w") as writer:
-                logger.info(f"***** Predict results {data_args.task_name} *****")
+                logger.info(
+                    f"***** Predict results {data_args.task_name} *****")
                 writer.write("index\tprediction\n")
                 for index, (item, label) in enumerate(zip(predictions, predict_dataset['label'])):
-                    item = label_list[item] if not is_multilabel else [label_list[i] for i, x in enumerate(item) if x]
-                    label = label_list[label] if not is_multilabel else [label_list[i] for i, x in enumerate(label) if x]
-                    writer.write(f"{index}: {item}\t/ {label}\n")
+                    item = label_list[item] if not is_multilabel else [
+                        label_list[i] for i, x in enumerate(item) if x]
+                    label = label_list[label] if not is_multilabel else [
+                        label_list[i] for i, x in enumerate(label) if x]
+                    writer.write(f"{index}: {item} / {label}\n")
 
     if training_args.push_to_hub:
         trainer.push_to_hub()
