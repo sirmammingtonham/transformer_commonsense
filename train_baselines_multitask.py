@@ -23,11 +23,10 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-import json
 import torch
 import numpy as np
 from tqdm import tqdm
-from datasets import load_from_disk, load_metric, DatasetDict
+from datasets import load_from_disk, DatasetDict
 
 import transformers
 from transformers import (
@@ -365,10 +364,6 @@ def main():
             logger.info(
                 f"Sample {index} of the training set: {train_dataset[index]}.")
 
-    # bleu = load_metric('sacrebleu')
-    # rouge = load_metric('rouge')
-    # meteor = load_metric('meteor')
-
     def compute_metrics(p: EvalPrediction):
         lm_preds, cls_preds = p.predictions
         lm_labels, cls_labels = p.label_ids
@@ -388,14 +383,14 @@ def main():
             result = {'accuracy': accuracy, 'hamming_score': hamming_score,
                       'precision': precision, 'recall': recall, 'f1': fscore}
 
-        # lm metrics
+        # lm metrics (redundant but i dont want to override the eval loop just to pass lm_loss)
         with torch.no_grad():
             lm_preds = torch.tensor(lm_preds)
             lm_labels = torch.tensor(lm_labels)
             shifted_logits = lm_preds[:, :-1, :].contiguous()
             lm_labels = lm_labels[:, 1:].contiguous()
             lm_loss = cross_entropy(
-                shifted_logits.view(-1, model.config.vocab_size), lm_labels.view(-1))
+                shifted_logits.view(-1, config.vocab_size), lm_labels.view(-1))
             perplexity = torch.exp(lm_loss)
 
         result['perplexity'] = perplexity.item()
@@ -512,22 +507,6 @@ def main():
             total_sequence = prompt + ' ' + text
             outputs.append(total_sequence)
             labels.append(label)
-
-            # bleu.add(prediction=text, reference=[label])
-            # rouge.add(prediction=text, reference=label)
-            # meteor.add(prediction=text, reference=label)
-
-        # compute scores and output to file
-        # bleu_score = bleu.compute()['score']
-        # rouge_score = rouge.compute()['rougeL'].mid.fmeasure
-        # meteor_score = meteor.compute()['meteor']
-        # result = {'bleu': bleu_score,
-        #           'rouge': rouge_score, 'meteor': meteor_score}
-        # logger.info(result)
-        # output_results_file = os.path.join(
-        #     training_args.output_dir, f"generation_results.json")
-        # with open(output_results_file, "w") as writer:
-        #     json.dump(result, writer)
 
         # output predictions to file
         output_predict_file = os.path.join(

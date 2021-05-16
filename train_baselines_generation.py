@@ -200,13 +200,25 @@ def main():
     if data_args.task_name == 'storycloze_ending_generation':
         loaded_data = load_from_disk('./storycloze/storycloze_valid')
         train_valid = loaded_data.train_test_split(test_size=0.1, seed=SEED)
-        test_dataset =  load_from_disk('./storycloze/storycloze_test')
+        test_dataset = load_from_disk('./storycloze/storycloze_test')
         # test_dataset = loaded_data.train_test_split(
         #     test_size=0.01, seed=SEED)['test']
         datasets = DatasetDict({
             'train': train_valid['train'],
             'test': test_dataset,
             'validation': train_valid['test']}
+        )
+    elif data_args.task_name == 'category_ending_generation':
+        loaded_data = load_from_disk('./baseline_data/category')
+        train_testvalid = loaded_data.train_test_split(
+            test_size=0.2, seed=SEED)
+        test_valid = train_testvalid['test'].train_test_split(
+            test_size=0.5, seed=SEED)
+        test_dataset = test_valid['test']
+        datasets = DatasetDict({
+            'train': train_testvalid['train'],
+            'test': test_valid['test'],
+            'validation': test_valid['train']}
         )
     else:
         raise Exception(
@@ -303,12 +315,20 @@ def main():
 
     def tokenize_function(examples):
         with CaptureLogger(tok_logger) as cl:
-            text = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
-                              examples['InputSentence3'][i], examples['InputSentence4'][i],
-                            #   gen_token,
-                              examples['RandomFifthSentenceQuiz1'][i] if not examples['label'][i] else examples['RandomFifthSentenceQuiz2'][i],
-                              eos_token))
-                    for i in range(len(examples['InputSentence1']))]
+            if data_args.task_name == 'storycloze_ending_generation':
+                text = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
+                                  examples['InputSentence3'][i], examples['InputSentence4'][i],
+                                  #   gen_token,
+                                  examples['RandomFifthSentenceQuiz1'][i] if not examples[
+                                      'label'][i] else examples['RandomFifthSentenceQuiz2'][i],
+                                  eos_token))
+                        for i in range(len(examples['InputSentence1']))]
+            else:
+                text = [' '.join((examples['first_sentence'][i], examples['second_sentence'][i],
+                                  examples['third_sentence'][i], examples['fourth_sentence'][i],
+                                  examples['fifth_sentence'][i], eos_token))
+                        for i in range(len(examples['first_sentence']))
+                        ]
             output = tokenizer(text, add_special_tokens=False)
         # clm input could be much much longer than block_size
         if "Token indices sequence length is longer than the" in cl.out:
@@ -332,7 +352,8 @@ def main():
                 f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
                 "Picking 1024 instead. You can change that default value by passing --block_size xxx."
             )
-        block_size = config.max_position_embeddings if hasattr(config, 'max_position_embeddings') else config.d_model
+        block_size = config.max_position_embeddings if hasattr(
+            config, 'max_position_embeddings') else config.d_model
     else:
         if data_args.block_size > tokenizer.model_max_length:
             logger.warning(
@@ -449,6 +470,18 @@ def main():
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
+
+        metrics = trainer.evaluate(eval_dataset=lm_datasets["test"])
+
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(
+            eval_dataset)
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+        perplexity = math.exp(metrics["eval_loss"])
+        metrics["perplexity"] = perplexity
+
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
+
         bleu = load_metric('sacrebleu')
         rouge = load_metric('rouge')
         meteor = load_metric('meteor')
@@ -457,11 +490,17 @@ def main():
         labels = []
 
         for example in tqdm(test_dataset):
-            prompt = ' '.join([example['InputSentence1'], example['InputSentence2'],
-                              example['InputSentence3'], example['InputSentence4'], 
-                            #   gen_token
-                              ])
-            label = example['RandomFifthSentenceQuiz1'] if not example['label'] else example['RandomFifthSentenceQuiz2']
+            if data_args.task_name == 'storycloze_ending_generation':
+                prompt = ' '.join((example['InputSentence1'], example['InputSentence2'],
+                                example['InputSentence3'], example['InputSentence4'],
+                                #   gen_token
+                                ))
+                label = example['RandomFifthSentenceQuiz1'] if not example['label'] else example['RandomFifthSentenceQuiz2']
+            else:
+                prompt = ' '.join((example['first_sentence'], example['second_sentence'],
+                         example['third_sentence'], example['fourth_sentence']))
+                label = example['fifth_sentence']
+
             input_ids = tokenizer(prompt, add_special_tokens=False, return_tensors='pt')[
                 'input_ids'].to(trainer.args.device)
             generated_sequence = model.generate(
@@ -496,7 +535,7 @@ def main():
                   'rouge': rouge_score, 'meteor': meteor_score}
         logger.info(result)
         output_results_file = os.path.join(
-            training_args.output_dir, f"eval_results.json")
+            training_args.output_dir, f"eval_results_extra.json")
         with open(output_results_file, "w") as writer:
             json.dump(result, writer)
 
