@@ -23,15 +23,16 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
+import json
+import torch
 import numpy as np
-from datasets import load_from_disk, DatasetDict
+from tqdm import tqdm
+from datasets import load_from_disk, load_metric, DatasetDict
 
 import transformers
 from transformers import (
     AutoConfig,
-    AutoModelForSequenceClassification,
     AutoTokenizer,
-    DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
     TrainingArguments,
@@ -39,9 +40,14 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process, set_seed
 from transformers.utils import check_min_version
-from src.trainer import CommonSenseTrainer, default_data_collator
+
+from src.trainer import MultitaskTrainer, multitask_data_collator
+from src.auto_multitask import AutoModelForMultitasking
+
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_recall_fscore_support, hamming_loss
+
+from torch.nn.functional import cross_entropy
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.6.0.dev0")
@@ -49,6 +55,13 @@ check_min_version("4.6.0.dev0")
 logger = logging.getLogger(__name__)
 SEED = 690
 THRESHOLD = 0.5
+
+MAX_END_LENGTH = 50
+TEMPERATURE = 1.0
+K = 0
+P = 0.9
+REP_PENALTY = 1.0
+
 set_seed(SEED)
 
 
@@ -64,7 +77,8 @@ class DataTrainingArguments:
 
     task_name: Optional[str] = field(
         default=None,
-        metadata={"help": "The name of the task to train on: storycloze_prediction', 'commonsense_category_prediction', 'commonsense_importance_prediction"},
+        metadata={
+            "help": "The name of the task to train on: 'commonsense_category_prediction', 'commonsense_importance_prediction"},
     )
     max_seq_length: int = field(
         default=128,
@@ -224,16 +238,7 @@ def main():
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
     class_weights = None
-    if data_args.task_name == 'storycloze_prediction':
-        loaded_data = load_from_disk('./storycloze/storycloze_valid')
-        train_valid = loaded_data.train_test_split(test_size=0.1, seed=SEED)
-        test = load_from_disk('./storycloze/storycloze_test')
-        datasets = DatasetDict({
-            'train': train_valid['train'],
-            'test': test,
-            'validation': train_valid['test']}
-        )
-    elif data_args.task_name == 'commonsense_category_prediction':
+    if data_args.task_name == 'commonsense_category_prediction':
         loaded_data = load_from_disk('./baseline_data/category')
         train_testvalid = loaded_data.train_test_split(
             test_size=0.2, seed=SEED)
@@ -287,7 +292,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
+    model = AutoModelForMultitasking.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
@@ -313,29 +318,20 @@ def main():
     eos_token = tokenizer.special_tokens_map['eos_token' if 'eos_token' in tokenizer.special_tokens_map else 'sep_token']
 
     if 'pad_token' not in tokenizer.special_tokens_map:
-        tokenizer.pad_token = tokenizer.eos_token # special case for gpt2
-        config.pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.pad_token)
+        tokenizer.pad_token = tokenizer.eos_token  # special case for gpt2
+        config.pad_token_id = tokenizer.convert_tokens_to_ids(
+            tokenizer.pad_token)
 
     def preprocess_function(examples):
         # Tokenize the texts
-        if data_args.task_name == 'storycloze_prediction':
-            args = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
-                              examples['InputSentence3'][i], examples['InputSentence4'][i], #eos_token,
-                              examples['RandomFifthSentenceQuiz1'][i], examples['RandomFifthSentenceQuiz2'][i]))
-                    for i in range(len(examples['InputSentence1']))
-                    ]
-            result = tokenizer(args, padding=padding,
-                               max_length=max_seq_length, truncation=True)
-        else:
-            args = [' '.join((examples['first_sentence'][i], examples['second_sentence'][i],
-                              examples['third_sentence'][i], examples['fourth_sentence'][i], #eos_token,
-                              examples['fifth_sentence'][i]))
-                    for i in range(len(examples['first_sentence']))
-                    ]
-            result = tokenizer(args, padding=padding,
-                               max_length=max_seq_length, truncation=True)
-
-        # result["labels"] = examples["label"]
+        args = [' '.join((examples['first_sentence'][i], examples['second_sentence'][i],
+                          # eos_token,
+                          examples['third_sentence'][i], examples['fourth_sentence'][i],
+                          examples['fifth_sentence'][i]))
+                for i in range(len(examples['first_sentence']))
+                ]
+        result = tokenizer(args, padding=padding,
+                           max_length=max_seq_length, truncation=True)
 
         return result
 
@@ -343,7 +339,7 @@ def main():
     # we want to remove extra columns from dataset except for label
     column_names.remove("label")
 
-    datasets = datasets.map(preprocess_function, batched=True, remove_columns=column_names,
+    datasets = datasets.map(preprocess_function, batched=True, #remove_columns=column_names,
                             load_from_cache_file=not data_args.overwrite_cache)
     if training_args.do_train:
         train_dataset = datasets["train"]
@@ -369,37 +365,48 @@ def main():
             logger.info(
                 f"Sample {index} of the training set: {train_dataset[index]}.")
 
-    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
-    # predictions and label_ids field) and has to return a dictionary string to float.
+    # bleu = load_metric('sacrebleu')
+    # rouge = load_metric('rouge')
+    # meteor = load_metric('meteor')
+
     def compute_metrics(p: EvalPrediction):
-        preds = p.predictions[0] if isinstance(
-            p.predictions, tuple) else p.predictions
-        preds = np.argmax(preds, axis=1) if not is_multilabel else np.array(
-            [p > THRESHOLD for p in preds])
+        lm_preds, cls_preds = p.predictions
+        lm_labels, cls_labels = p.label_ids
+        cls_preds = np.argmax(cls_preds, axis=-1) if not is_multilabel else np.array(
+            [p > THRESHOLD for p in cls_preds])
+
+        # classification metrics
         precision, recall, fscore, _ = precision_recall_fscore_support(
-            p.label_ids, preds, average='weighted', zero_division=0)
-        accuracy = accuracy_score(p.label_ids, preds)
+            cls_labels, cls_preds, average='weighted', zero_division=0)
+        accuracy = accuracy_score(cls_labels, cls_preds)
         if not is_multilabel:
-            balanced_accuracy = balanced_accuracy_score(p.label_ids, preds)
+            balanced_accuracy = balanced_accuracy_score(cls_labels, cls_preds)
             result = {'accuracy': accuracy, 'balanced_accuracy': balanced_accuracy,
                       'precision': precision, 'recall': recall, 'f1': fscore}
         else:
-            hamming_score = hamming_loss(p.label_ids, preds)
+            hamming_score = hamming_loss(cls_labels, cls_preds)
             result = {'accuracy': accuracy, 'hamming_score': hamming_score,
                       'precision': precision, 'recall': recall, 'f1': fscore}
+
+        # lm metrics
+        with torch.no_grad():
+            lm_preds = torch.tensor(lm_preds)
+            lm_labels = torch.tensor(lm_labels)
+            shifted_logits = lm_preds[:, :-1, :].contiguous()
+            lm_labels = lm_labels[:, 1:].contiguous()
+            lm_loss = cross_entropy(
+                shifted_logits.view(-1, model.config.vocab_size), lm_labels.view(-1))
+            perplexity = torch.exp(lm_loss)
+
+        result['perplexity'] = perplexity.item()
+
         return result
 
     # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
-    if data_args.pad_to_max_length:
-        data_collator = default_data_collator
-    elif training_args.fp16:
-        data_collator = DataCollatorWithPadding(
-            tokenizer, pad_to_multiple_of=8)
-    else:
-        data_collator = None
+    data_collator = multitask_data_collator
 
     # Initialize our Trainer
-    trainer = CommonSenseTrainer(
+    trainer = MultitaskTrainer(
         class_weights=class_weights,
         multi_label=is_multilabel,
         model=model,
@@ -454,26 +461,83 @@ def main():
         metrics["eval_samples"] = len(predict_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
-        # Removing the `label` columns because it contains -1 and Trainer won't like that.
-        # predict_dataset.remove_columns_("label")
-        predictions = trainer.predict(
-            predict_dataset, metric_key_prefix="predict").predictions
-        predictions = np.argmax(predictions, axis=1) if not is_multilabel else np.array(
-            [p > THRESHOLD for p in predictions])
 
-        output_predict_file = os.path.join(
-            training_args.output_dir, f"predict_results.txt")
+        p = trainer.predict(
+            predict_dataset, metric_key_prefix="predict")
+        predict_dataset.remove_columns_("label")
+        _, cls_preds = p.predictions
+        _, cls_labels = p.label_ids
+
+        cls_preds = np.argmax(cls_preds, axis=-1) if not is_multilabel else np.array(
+            [p > THRESHOLD for p in cls_preds])
+
         if trainer.is_world_process_zero():
+            output_predict_file = os.path.join(training_args.output_dir, f"classification_results.txt")
             with open(output_predict_file, "w") as writer:
                 logger.info(
-                    f"***** Predict results {data_args.task_name} *****")
+                    f"***** Classification results {data_args.task_name} *****")
                 writer.write("index\tprediction\n")
-                for index, (item, label) in enumerate(zip(predictions, predict_dataset['label'])):
+                for index, (item, label) in enumerate(zip(cls_preds, cls_labels)):
                     item = label_list[item] if not is_multilabel else [
                         label_list[i] for i, x in enumerate(item) if x]
                     label = label_list[label] if not is_multilabel else [
                         label_list[i] for i, x in enumerate(label) if x]
                     writer.write(f"{index}: {item} / {label}\n")
+
+        outputs = []
+        labels = []
+
+        for example in tqdm(predict_dataset):
+            prompt = ' '.join([example['first_sentence'], example['second_sentence'],
+                          example['third_sentence'], example['fourth_sentence']])
+            label = example['fifth_sentence']
+            input_ids = tokenizer(prompt, add_special_tokens=False, return_tensors='pt')[
+                'input_ids'].to(trainer.args.device)
+            generated_sequence = model.generate(
+                input_ids=input_ids,
+                max_length=len(input_ids[0]) + MAX_END_LENGTH,
+                temperature=TEMPERATURE,
+                top_k=K,
+                top_p=P,
+                repetition_penalty=REP_PENALTY,
+                do_sample=True,
+                num_return_sequences=1,
+            )[0]
+
+            text = tokenizer.decode(
+                generated_sequence, clean_up_tokenization_spaces=True)
+
+            # Remove all text after the stop token
+            text = text[: text.find(eos_token)]
+            total_sequence = prompt + ' ' + text
+            outputs.append(total_sequence)
+            labels.append(label)
+
+            # bleu.add(prediction=text, reference=[label])
+            # rouge.add(prediction=text, reference=label)
+            # meteor.add(prediction=text, reference=label)
+
+        # compute scores and output to file
+        # bleu_score = bleu.compute()['score']
+        # rouge_score = rouge.compute()['rougeL'].mid.fmeasure
+        # meteor_score = meteor.compute()['meteor']
+        # result = {'bleu': bleu_score,
+        #           'rouge': rouge_score, 'meteor': meteor_score}
+        # logger.info(result)
+        # output_results_file = os.path.join(
+        #     training_args.output_dir, f"generation_results.json")
+        # with open(output_results_file, "w") as writer:
+        #     json.dump(result, writer)
+
+        # output predictions to file
+        output_predict_file = os.path.join(
+            training_args.output_dir, f"generate_results.txt")
+        with open(output_predict_file, "w", encoding="utf-8") as writer:
+            logger.info(
+                f"***** Predict results {data_args.task_name} *****")
+            writer.write("index\tprediction\n")
+            for index, (item, label) in enumerate(zip(outputs, labels)):
+                writer.write(f"{index}: {item} / {label}\n")
 
     if training_args.push_to_hub:
         trainer.push_to_hub()

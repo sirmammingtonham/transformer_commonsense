@@ -37,6 +37,7 @@ from transformers import (
     CONFIG_MAPPING,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
     AutoTokenizer,
     HfArgumentParser,
     Trainer,
@@ -199,9 +200,9 @@ def main():
     if data_args.task_name == 'storycloze_ending_generation':
         loaded_data = load_from_disk('./storycloze/storycloze_valid')
         train_valid = loaded_data.train_test_split(test_size=0.1, seed=SEED)
-        # test_dataset =  load_from_disk('./storycloze/storycloze_test')
-        test_dataset = loaded_data.train_test_split(
-            test_size=0.01, seed=SEED)['test']
+        test_dataset =  load_from_disk('./storycloze/storycloze_test')
+        # test_dataset = loaded_data.train_test_split(
+        #     test_size=0.01, seed=SEED)['test']
         datasets = DatasetDict({
             'train': train_valid['train'],
             'test': test_dataset,
@@ -254,8 +255,8 @@ def main():
                 revision=model_args.model_revision,
                 use_auth_token=True if model_args.use_auth_token else None,
             )
-        else:
-            model = AutoModelForCausalLM.from_pretrained(
+        elif config.model_type == 'bart':
+            model = AutoModelForSeq2SeqLM.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -263,6 +264,25 @@ def main():
                 revision=model_args.model_revision,
                 use_auth_token=True if model_args.use_auth_token else None,
             )
+        else:
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_args.model_name_or_path,
+                    from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                    revision=model_args.model_revision,
+                    use_auth_token=True if model_args.use_auth_token else None,
+                )
+            except ValueError:
+                model = AutoModelForSeq2SeqLM.from_pretrained(
+                    model_args.model_name_or_path,
+                    from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                    revision=model_args.model_revision,
+                    use_auth_token=True if model_args.use_auth_token else None,
+                )
     else:
         raise Exception('using pretrained only!')
 
@@ -277,11 +297,15 @@ def main():
         "transformers.tokenization_utils_base")
 
     eos_token = tokenizer.special_tokens_map['eos_token' if 'eos_token' in tokenizer.special_tokens_map else 'sep_token']
+    # gen_token = '[GEN_ENDING]' # token to signify generate ending
+    # tokenizer.add_special_tokens({'additional_special_tokens': [gen_token]})
+    # model.resize_token_embeddings(len(tokenizer))
 
     def tokenize_function(examples):
         with CaptureLogger(tok_logger) as cl:
             text = [' '.join((examples['InputSentence1'][i], examples['InputSentence2'][i],
                               examples['InputSentence3'][i], examples['InputSentence4'][i],
+                            #   gen_token,
                               examples['RandomFifthSentenceQuiz1'][i] if not examples['label'][i] else examples['RandomFifthSentenceQuiz2'][i],
                               eos_token))
                     for i in range(len(examples['InputSentence1']))]
@@ -308,7 +332,7 @@ def main():
                 f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
                 "Picking 1024 instead. You can change that default value by passing --block_size xxx."
             )
-        block_size = config.max_position_embeddings
+        block_size = config.max_position_embeddings if hasattr(config, 'max_position_embeddings') else config.d_model
     else:
         if data_args.block_size > tokenizer.model_max_length:
             logger.warning(
@@ -434,7 +458,9 @@ def main():
 
         for example in tqdm(test_dataset):
             prompt = ' '.join([example['InputSentence1'], example['InputSentence2'],
-                              example['InputSentence3'], example['InputSentence4']])
+                              example['InputSentence3'], example['InputSentence4'], 
+                            #   gen_token
+                              ])
             label = example['RandomFifthSentenceQuiz1'] if not example['label'] else example['RandomFifthSentenceQuiz2']
             input_ids = tokenizer(prompt, add_special_tokens=False, return_tensors='pt')[
                 'input_ids'].to(trainer.args.device)
@@ -477,7 +503,7 @@ def main():
         # output predictions to file
         output_predict_file = os.path.join(
             training_args.output_dir, f"predict_results.txt")
-        with open(output_predict_file, "w") as writer:
+        with open(output_predict_file, "w", encoding="utf-8") as writer:
             logger.info(
                 f"***** Predict results {data_args.task_name} *****")
             writer.write("index\tprediction\n")
