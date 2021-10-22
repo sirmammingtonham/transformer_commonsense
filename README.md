@@ -3,7 +3,7 @@
 ## Creating environment
 Run `conda env create -f environment.yml`, then `conda activate story_cloze` to set the env.
 
-`convert_commonsense.py` and `convert_storycloze.py` are for pre-processing. To run, create a folder `baseline_texts` in the root directory with the base text files and run `python convert_commonsense.py cat` for the category task or replace `cat` with `imp` for the importance task.
+`convert_commonsense.py` and `convert_storycloze.py` are for pre-processing. Run `python convert_commonsense.py cat` to convert the mturk collected txt files to a feather dataset for the category task or replace `cat` with `imp` for the importance task. (The processed datasets are already in the `baseline_data/` folder.)
 
 ## Running classification tasks
 Run `python train_baselines_classification.py --model_name_or_path $MODEL --task_name $TASK --do_train --do_eval --do_predict --max_seq_length 128 --per_device_train_batch_size 16 --learning_rate 5e-6 --num_train_epochs 18 --output_dir $OUTPUT --evaluation_strategy epoch --logging_steps 10 --save_steps -1 --overwrite_output_dir --fp16`
