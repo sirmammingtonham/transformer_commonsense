@@ -1,6 +1,6 @@
 # A Corpus for Commonsense Inference in the Story Cloze Test
 
-This repo contains code for [A Corpus for Commonsense Inference in the Story Cloze Test](http://www.lrec-conf.org/proceedings/lrec2022/pdf/2022.lrec-1.375.pdf) (Bingsheng Yao, Ethan Joseph, Julian Lioanag, Mei Si; In Proceedings of the 13th Conference on Language Resources and Evaluation (LREC 2022))
+This repo contains code for [A Corpus for Commonsense Inference in the Story Cloze Test](http://www.lrec-conf.org/proceedings/lrec2022/pdf/2022.lrec-1.375.pdf) (Yao, Bingsheng, Ethan Joseph, Julian Lioanag, and Mei Si. "A Corpus for Commonsense Inference in Story Cloze Test." In Proceedings of the Thirteenth Language Resources and Evaluation Conference, pp. 3500-3508. 2022.)
 
 ## Dataset
 Dataset is accessible in arrow format in [baseline_data/](baseline_data) and raw text format in [baseline_texts/](baseline_texts). 
